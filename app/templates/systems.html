@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Systems</h2>
+        <div>
+            <a href="/" class="btn btn-outline-primary me-2">
+                <i class="bi bi-grid me-1"></i> Applications View
+            </a>
+            <button class="btn btn-primary" onclick="showImportModal()">
+                <i class="bi bi-upload me-1"></i> Import
+            </button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover" id="systemsTable">
+                    <thead>
+                        <tr>
+                            <th>Team</th>
+                            <th>Application</th>
+                            <th>Host</th>
+                            <th>Port</th>
+                            <th>WebUI</th>
+                            <th>Database</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for instance in instances %}
+                        <tr data-instance-id="{{ instance.id }}">
+                            <td>{{ instance.application.team.name }}</td>
+                            <td>{{ instance.application.name }}</td>
+                            <td>{{ instance.host }}</td>
+                            <td>{{ instance.port }}</td>
+                            <td>
+                                {% if instance.webui_url %}
+                                <a href="{{ instance.webui_url }}" target="_blank" class="text-decoration-none">
+                                    <i class="bi bi-box-arrow-up-right"></i> Open
+                                </a>
+                                {% endif %}
+                            </td>
+                            <td>{{ instance.db_host }}</td>
+                            <td>
+                                <span class="badge bg-secondary">Unknown</span>
+                            </td>
+                            <td>
+                                <div class="btn-group">
+                                    <button class="btn btn-sm btn-outline-info" 
+                                            onclick="checkInstanceStatus('{{ instance.id }}')"
+                                            data-bs-toggle="tooltip" 
+                                            data-bs-placement="top" 
+                                            title="Check Status">
+                                        <i class="bi bi-arrow-clockwise"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" 
+                                            onclick="confirmInstanceShutdown('{{ instance.id }}')"
+                                            data-bs-toggle="tooltip" 
+                                            data-bs-placement="top" 
+                                            title="Shutdown Instance">
+                                        <i class="bi bi-power"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Import Modal -->
+{% include 'import_modal.html' %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    });
+    
+    // Initialize DataTable
+    $('#systemsTable').DataTable({
+        pageLength: 25,
+        order: [[0, 'asc'], [1, 'asc']],
+        dom: '<"d-flex justify-content-between align-items-center mb-3"<"d-flex align-items-center"l><"d-flex align-items-center"f>>rtip',
+        language: {
+            search: "_INPUT_",
+            searchPlaceholder: "Search systems..."
+        }
+    });
+});
+
+function checkInstanceStatus(instanceId) {
+    // Show loading state
+    const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
+    const statusBadge = row.querySelector('.badge');
+    statusBadge.className = 'badge bg-warning';
+    statusBadge.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Checking...';
+
+    fetch(`/check_instance_status/${instanceId}`)
+        .then(response => response.json())
+        .then(data => {
+            switch(data.status) {
+                case 'success':
+                    switch(data.current_status) {
+                        case 'running':
+                            statusBadge.className = 'badge bg-success';
+                            statusBadge.innerHTML = '<i class="bi bi-check-circle me-1"></i>Running';
+                            break;
+                        case 'stopped':
+                            statusBadge.className = 'badge bg-danger';
+                            statusBadge.innerHTML = '<i class="bi bi-x-circle me-1"></i>Stopped';
+                            break;
+                        case 'in_progress':
+                            statusBadge.className = 'badge bg-info';
+                            statusBadge.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>In Progress';
+                            break;
+                        default:
+                            statusBadge.className = 'badge bg-secondary';
+                            statusBadge.innerHTML = '<i class="bi bi-question-circle me-1"></i>Unknown';
+                    }
+                    break;
+                case 'warning':
+                    statusBadge.className = 'badge bg-warning';
+                    statusBadge.innerHTML = '<i class="bi bi-exclamation-circle me-1"></i>' + data.message;
+                    break;
+                case 'error':
+                    statusBadge.className = 'badge bg-danger';
+                    statusBadge.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Error';
+                    console.error(`Error checking ${data.host}:${data.port} - ${data.message}`);
+                    break;
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            statusBadge.className = 'badge bg-danger';
+            statusBadge.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Error';
+        });
+}
+
+function confirmInstanceShutdown(instanceId) {
+    if (confirm('Are you sure you want to shutdown this instance?')) {
+        fetch(`/shutdown_instance/${instanceId}`, { 
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // Update status badge to "In Progress"
+                const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
+                const statusBadge = row.querySelector('.badge');
+                statusBadge.className = 'badge bg-info';
+                statusBadge.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>In Progress';
+            } else {
+                alert(data.message || 'Failed to initiate shutdown');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Failed to shutdown instance');
+        });
+    }
+}
+</script>
+
+<style>
+.dataTables_filter {
+    margin-bottom: 0 !important;
+}
+.dataTables_filter input {
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 0.375rem 0.75rem;
+}
+.dataTables_length select {
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 0.375rem 2.25rem 0.375rem 0.75rem;
+}
+</style>
+{% endblock %}

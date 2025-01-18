@@ -3,6 +3,7 @@ from app.models import db, Team, Application, ApplicationInstance
 from app.utils import check_application_status
 import csv
 from datetime import datetime
+import socket
 
 main = Blueprint('main', __name__)
 
@@ -15,6 +16,11 @@ def index():
 def teams():
     teams = Team.query.all()
     return render_template('teams.html', teams=teams)
+
+@main.route('/systems')
+def systems():
+    instances = ApplicationInstance.query.join(Application).join(Team).order_by(Team.name, Application.name).all()
+    return render_template('systems.html', instances=instances)
 
 @main.route('/import_apps', methods=['POST'])
 def import_apps():
@@ -182,15 +188,133 @@ def check_status(app_id):
     app = Application.query.get_or_404(app_id)
     results = []
     for instance in app.instances:
-        status = check_application_status(instance)
-        instance.status = status
-        instance.last_checked = datetime.utcnow()
-        results.append({
-            'host': instance.host,
-            'status': status
-        })
+        try:
+            # Try to connect to the host and port
+            if not instance.port:  # Skip if no port specified
+                instance.status = 'unknown'
+                results.append({
+                    'host': instance.host,
+                    'port': None,
+                    'status': 'unknown',
+                    'message': 'No port specified'
+                })
+                continue
+                
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)  # 2 second timeout
+            result = sock.connect_ex((instance.host, instance.port))
+            sock.close()
+            
+            if result == 0:
+                instance.status = 'running'
+            else:
+                instance.status = 'stopped'
+                
+            instance.last_checked = datetime.utcnow()
+            results.append({
+                'host': instance.host,
+                'port': instance.port,
+                'status': instance.status
+            })
+        except Exception as e:
+            instance.status = 'unknown'
+            instance.last_checked = datetime.utcnow()
+            results.append({
+                'host': instance.host,
+                'port': instance.port,
+                'status': 'error',
+                'message': str(e)
+            })
+    
     db.session.commit()
-    return jsonify(results)
+    return jsonify({'status': 'success', 'results': results})
+
+@main.route('/check_instance_status/<int:instance_id>')
+def check_instance_status(instance_id):
+    instance = ApplicationInstance.query.get_or_404(instance_id)
+    try:
+        if not instance.port:  # Skip if no port specified
+            instance.status = 'unknown'
+            instance.last_checked = datetime.utcnow()
+            db.session.commit()
+            return jsonify({
+                'status': 'warning',
+                'host': instance.host,
+                'port': None,
+                'message': 'No port specified'
+            })
+            
+        # Try to connect to the host and port
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)  # 2 second timeout
+        result = sock.connect_ex((instance.host, instance.port))
+        sock.close()
+        
+        if result == 0:
+            instance.status = 'running'
+        else:
+            instance.status = 'stopped'
+            
+        instance.last_checked = datetime.utcnow()
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'host': instance.host,
+            'port': instance.port,
+            'current_status': instance.status
+        })
+    except Exception as e:
+        instance.status = 'unknown'
+        instance.last_checked = datetime.utcnow()
+        db.session.commit()
+        return jsonify({
+            'status': 'error',
+            'host': instance.host,
+            'port': instance.port,
+            'message': str(e)
+        })
+
+@main.route('/shutdown_app/<int:app_id>', methods=['POST'])
+def shutdown_app(app_id):
+    app = Application.query.get_or_404(app_id)
+    try:
+        # Mark all instances as in_progress
+        for instance in app.instances:
+            instance.status = 'in_progress'
+        db.session.commit()
+        
+        # Here you would typically trigger an async task to handle the actual shutdown
+        # For now, we'll just simulate success
+        return jsonify({
+            'status': 'success',
+            'message': f'Shutdown initiated for {app.name}'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@main.route('/shutdown_instance/<int:instance_id>', methods=['POST'])
+def shutdown_instance(instance_id):
+    instance = ApplicationInstance.query.get_or_404(instance_id)
+    try:
+        # Mark instance as in_progress
+        instance.status = 'in_progress'
+        db.session.commit()
+        
+        # Here you would typically trigger an async task to handle the actual shutdown
+        # For now, we'll just simulate success
+        return jsonify({
+            'status': 'success',
+            'message': f'Shutdown initiated for {instance.application.name} on {instance.host}'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 @main.route('/check_all_status')
 def check_all_status():
@@ -199,13 +323,44 @@ def check_all_status():
     for app in apps:
         app_results = []
         for instance in app.instances:
-            status = check_application_status(instance)
-            instance.status = status
-            instance.last_checked = datetime.utcnow()
-            app_results.append({
-                'host': instance.host,
-                'status': status
-            })
+            try:
+                # Try to connect to the host and port
+                if not instance.port:  # Skip if no port specified
+                    instance.status = 'unknown'
+                    instance.last_checked = datetime.utcnow()
+                    app_results.append({
+                        'host': instance.host,
+                        'port': None,
+                        'status': 'unknown',
+                        'message': 'No port specified'
+                    })
+                    continue
+                    
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2)  # 2 second timeout
+                result = sock.connect_ex((instance.host, instance.port))
+                sock.close()
+                
+                if result == 0:
+                    instance.status = 'running'
+                else:
+                    instance.status = 'stopped'
+                    
+                instance.last_checked = datetime.utcnow()
+                app_results.append({
+                    'host': instance.host,
+                    'port': instance.port,
+                    'status': instance.status
+                })
+            except Exception as e:
+                instance.status = 'unknown'
+                instance.last_checked = datetime.utcnow()
+                app_results.append({
+                    'host': instance.host,
+                    'port': instance.port,
+                    'status': 'error',
+                    'message': str(e)
+                })
         results.append({
             'id': app.id,
             'name': app.name,

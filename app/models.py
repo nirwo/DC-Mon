@@ -33,7 +33,7 @@ class ApplicationInstance(db.Model):
     port = db.Column(db.Integer)
     webui_url = db.Column(db.String(500))
     db_host = db.Column(db.String(200))
-    status = db.Column(db.String(50), default='unknown')
+    status = db.Column(db.String(20), default='unknown')  # unknown, running, stopped, in_progress
     last_checked = db.Column(db.DateTime)
     
     __table_args__ = (
