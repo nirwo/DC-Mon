@@ -51,11 +51,38 @@
                                 </td>
                                 <td>{{ app.name }}</td>
                                 <td>{{ app.team.name }}</td>
-                                <td>{{ app.host }}{% if app.port %}:{{ app.port }}{% endif %}</td>
-                                <td>{% if app.webui_url %}<a href="{{ app.webui_url }}" target="_blank">{{ app.webui_url }}</a>{% endif %}</td>
-                                <td>{{ app.db_host }}</td>
+                                <td>
+                                    {% for instance in app.instances %}
+                                    <div class="instance-row">
+                                        {{ instance.host }}{% if instance.port %}:{{ instance.port }}{% endif %}
+                                        {% if instance.webui_url %}
+                                        <a href="{{ instance.webui_url }}" target="_blank" class="btn btn-sm btn-link">
+                                            <i class="bi bi-box-arrow-up-right"></i>
+                                        </a>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </td>
+                                <td>
+                                    {% for instance in app.instances %}
+                                    <div class="instance-row">
+                                        {{ instance.db_host if instance.db_host else 'N/A' }}
+                                    </div>
+                                    {% endfor %}
+                                </td>
                                 <td>{{ app.shutdown_order }}</td>
-                                <td><span class="badge bg-secondary">Unknown</span></td>
+                                <td>
+                                    {% for instance in app.instances %}
+                                    <div class="instance-row">
+                                        <span class="badge {% if instance.is_running %}bg-success{% else %}bg-danger{% endif %}">
+                                            {{ 'Running' if instance.is_running else 'Stopped' }}
+                                        </span>
+                                        {% if instance.status_details %}
+                                        <small class="text-muted">{{ instance.status_details }}</small>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </td>
                                 <td>
                                     <div class="btn-group">
                                         <button class="btn btn-sm btn-outline-primary" onclick="editApplication({{ app.id }})">
@@ -307,6 +334,15 @@
         </div>
     </div>
 </div>
+<style>
+.instance-row {
+    padding: 2px 0;
+    border-bottom: 1px solid #eee;
+}
+.instance-row:last-child {
+    border-bottom: none;
+}
+</style>
 {% endblock %}
 
 {% block scripts %}

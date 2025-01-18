@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, jsonify, send_file, make_response
-from app.models import db, Team, Application, ApplicationDependency
+from app.models import db, Team, Application, ApplicationDependency, ApplicationInstance
 from app.utils import get_application_status, get_shutdown_sequence, check_application_status
 import csv
 from io import StringIO
@@ -259,6 +259,7 @@ def import_apps():
         # If replace mode, delete all existing applications
         if merge_mode == 'replace':
             ApplicationDependency.query.delete()
+            ApplicationInstance.query.delete()
             Application.query.delete()
             db.session.commit()
         
@@ -268,8 +269,9 @@ def import_apps():
         skipped = 0
         errors = []
         
-        # Create a dictionary to store teams to minimize database queries
+        # Create a dictionary to store teams and applications to minimize database queries
         teams_cache = {}
+        apps_cache = {}
         
         # Process all rows
         for row in reader:
@@ -301,61 +303,74 @@ def import_apps():
                     teams_cache[team_name] = team
                 team = teams_cache[team_name]
                 
-                # Check if application exists
-                app = Application.query.filter_by(name=name).first()
+                # Get or create application
+                app = apps_cache.get(name) or Application.query.filter_by(name=name).first()
                 
-                if app and merge_mode == 'skip':
-                    skipped += 1
-                    continue
-                
-                if app and merge_mode == 'merge':
-                    # Update existing application
-                    app.team_id = team.id
-                    app.host = host
-                    if port and port.isdigit():
-                        app.port = int(port)
-                    if webui_url:
-                        app.webui_url = webui_url
-                    if db_host:
-                        app.db_host = db_host
-                    if shutdown_order and shutdown_order.isdigit():
-                        app.shutdown_order = int(shutdown_order)
-                    updated += 1
-                else:
-                    # Create new application
+                if not app:
                     app = Application(
                         name=name,
                         team_id=team.id,
-                        host=host,
-                        port=int(port) if port and port.isdigit() else None,
-                        webui_url=webui_url,
-                        db_host=db_host,
                         shutdown_order=int(shutdown_order) if shutdown_order and shutdown_order.isdigit() else 100
                     )
                     db.session.add(app)
+                    db.session.flush()
+                    apps_cache[name] = app
                     imported += 1
+                elif merge_mode == 'skip':
+                    skipped += 1
+                    continue
+                elif merge_mode == 'merge':
+                    app.team_id = team.id
+                    if shutdown_order and shutdown_order.isdigit():
+                        app.shutdown_order = int(shutdown_order)
+                    updated += 1
                 
-                # Commit every 100 records to avoid large transactions
-                if (imported + updated + skipped) % 100 == 0:
-                    db.session.commit()
+                # Get or create instance
+                instance = ApplicationInstance.query.filter_by(
+                    application_id=app.id,
+                    host=host
+                ).first()
+                
+                if not instance:
+                    instance = ApplicationInstance(
+                        application_id=app.id,
+                        host=host,
+                        port=int(port) if port and port.isdigit() else None,
+                        webui_url=webui_url,
+                        db_host=db_host
+                    )
+                    db.session.add(instance)
+                else:
+                    instance.port = int(port) if port and port.isdigit() else instance.port
+                    instance.webui_url = webui_url if webui_url else instance.webui_url
+                    instance.db_host = db_host if db_host else instance.db_host
                 
                 # Store dependencies for later processing
                 if dependencies:
                     for dep_name in dependencies.split(';'):
                         if dep_name := clean_csv_value(dep_name):
                             if dep_app := Application.query.filter_by(name=dep_name).first():
-                                dependency = ApplicationDependency(
+                                # Check if dependency already exists
+                                if not ApplicationDependency.query.filter_by(
                                     application_id=app.id,
-                                    dependency_id=dep_app.id,
-                                    dependency_type='shutdown_before'
-                                )
-                                db.session.add(dependency)
+                                    dependency_id=dep_app.id
+                                ).first():
+                                    dependency = ApplicationDependency(
+                                        application_id=app.id,
+                                        dependency_id=dep_app.id,
+                                        dependency_type='shutdown_before'
+                                    )
+                                    db.session.add(dependency)
+                
+                # Commit every 100 records to avoid large transactions
+                if (imported + updated + skipped) % 100 == 0:
+                    db.session.commit()
                 
             except Exception as e:
                 errors.append(f"Error processing row {name}: {str(e)}")
-                continue  # Continue with next record even if this one fails
+                continue
         
-        # Final commit for any remaining records
+        # Final commit
         db.session.commit()
         
         return jsonify({
@@ -373,65 +388,30 @@ def import_apps():
 @main.route('/check_status/<int:app_id>')
 def check_status(app_id):
     app = Application.query.get_or_404(app_id)
-    status, details = check_application_status(app)
-    app.last_checked = datetime.utcnow()
+    all_running = True
+    details = []
+    
+    for instance in app.instances:
+        is_running, instance_details = check_application_status(instance)
+        instance.is_running = is_running
+        instance.status_details = '; '.join(instance_details) if instance_details else None
+        instance.last_checked = datetime.utcnow()
+        if not is_running:
+            all_running = False
+        details.extend(instance_details)
+    
     db.session.commit()
     
     return jsonify({
-        'id': app.id,
-        'name': app.name,
-        'status': status,
-        'details': details,
-        'last_checked': app.last_checked.isoformat()
+        'is_running': all_running,
+        'details': details
     })
 
-@main.route('/check_all_status')
-def check_all_status():
-    apps = Application.query.all()
-    results = {}
-    
-    for app in apps:
-        status, details = check_application_status(app)
-        app.last_checked = datetime.utcnow()
-        
-        results[app.id] = {
-            'name': app.name,
-            'status': status,
-            'details': details,
-            'last_checked': app.last_checked.isoformat()
-        }
-    
-    db.session.commit()
-    return jsonify(results)
-
-@main.route('/shutdown_sequence/<int:app_id>')
-def get_app_shutdown_sequence(app_id):
+@main.route('/shutdown/<int:app_id>')
+def shutdown_app(app_id):
     app = Application.query.get_or_404(app_id)
     sequence = get_shutdown_sequence(app)
-    
-    return jsonify({
-        'sequence': [{
-            'id': app.id,
-            'name': app.name,
-            'team': app.team.name,
-            'status': app.status,
-            'shutdown_order': app.shutdown_order
-        } for app in sequence]
-    })
-
-@main.route('/shutdown/<int:app_id>', methods=['POST'])
-def shutdown_application(app_id):
-    app = Application.query.get_or_404(app_id)
-    sequence = get_shutdown_sequence(app)
-    
-    try:
-        for app in sequence:
-            app.status = 'stopped'
-        db.session.commit()
-        return jsonify({'message': 'Shutdown sequence completed successfully'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 400
+    return jsonify(sequence)
 
 @main.route('/api/teams/<int:team_id>', methods=['DELETE'])
 def delete_team(team_id):

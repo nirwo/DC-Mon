@@ -1,0 +1,6 @@
+name,team,host,port,webui_url,db_host,shutdown_order,dependencies
+Frontend App,Web Team,web1.example.com,8080,http://web1:8080,,100,Backend API
+Frontend App,Web Team,web2.example.com,8080,http://web2:8080,,100,Backend API
+Backend API,API Team,api1.example.com,3000,http://api1:3000,db1.example.com:5432,90,Database
+Backend API,API Team,api2.example.com,3000,http://api2:3000,db1.example.com:5432,90,Database
+Database,DB Team,db1.example.com,5432,,,80,

@@ -116,32 +116,40 @@ def check_db_status(db_host):
     except Exception as e:
         return False, [f"Invalid database host format: {str(e)}"]
 
-def check_application_status(app):
-    """Check the status of an application by checking host, WebUI, and database."""
-    all_details = []
+def check_application_status(instance):
+    """Check if an application instance is running by checking its host and port."""
+    details = []
     is_running = True
-    
-    # Check main application host
-    host_running, host_details = check_host_status(app.host, app.port)
-    if not host_running:
+
+    # Check if host is reachable
+    try:
+        ping_result = ping(instance.host, timeout=1)
+        if ping_result is None or ping_result is False:
+            details.append(f"Host {instance.host} is unreachable")
+            is_running = False
+    except Exception as e:
+        details.append(f"Error pinging host {instance.host}: {str(e)}")
         is_running = False
-        all_details.extend(host_details)
-    
-    # Check WebUI if configured
-    if app.webui_url:
-        webui_running, webui_details = check_webui_status(app.webui_url)
-        if not webui_running:
+
+    # If port is specified, check if it's open
+    if instance.port and is_running:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex((instance.host, instance.port))
+            sock.close()
+            
+            if result != 0:
+                details.append(f"Port {instance.port} is not open")
+                is_running = False
+        except Exception as e:
+            details.append(f"Error checking port {instance.port}: {str(e)}")
             is_running = False
-            all_details.extend(webui_details)
-    
-    # Check database if configured
-    if app.db_host:
-        db_running, db_details = check_db_status(app.db_host)
-        if not db_running:
-            is_running = False
-            all_details.extend(db_details)
-    
-    return 'running' if is_running else 'stopped', all_details
+
+    if not details:
+        details.append("All checks passed")
+
+    return is_running, details
 
 def get_application_status(app) -> Dict[str, Any]:
     status = {
@@ -158,7 +166,8 @@ def get_application_status(app) -> Dict[str, Any]:
     
     return status
 
-def get_shutdown_sequence(app, visited=None) -> list:
+def get_shutdown_sequence(app, visited=None):
+    """Get the sequence of applications that need to be shut down."""
     if visited is None:
         visited = set()
     
@@ -168,16 +177,43 @@ def get_shutdown_sequence(app, visited=None) -> list:
     visited.add(app.id)
     sequence = []
     
-    # Get all dependencies that need to be shut down before this app
+    # First get dependencies
     for dep in app.dependencies:
         if dep.dependency_type == 'shutdown_before':
             sequence.extend(get_shutdown_sequence(dep.application, visited))
     
-    sequence.append(app)
-    
-    # Get all dependencies that need to be shut down after this app
-    for dep in app.dependencies:
-        if dep.dependency_type == 'shutdown_after':
-            sequence.extend(get_shutdown_sequence(dep.application, visited))
+    # Add current app if not already in sequence
+    if app not in sequence:
+        sequence.append(app)
     
     return sequence
+
+def clean_csv_value(value):
+    """Clean and validate a CSV value."""
+    if value is None:
+        return None
+    value = str(value).strip()
+    return value if value else None
+
+def map_csv_columns(headers):
+    """Map CSV headers to expected column names."""
+    column_mapping = {}
+    expected_columns = {
+        'name': ['name', 'application', 'app_name', 'application_name'],
+        'team': ['team', 'team_name'],
+        'host': ['host', 'hostname', 'server'],
+        'port': ['port'],
+        'webui_url': ['webui_url', 'web_url', 'url'],
+        'db_host': ['db_host', 'database_host'],
+        'shutdown_order': ['shutdown_order', 'order'],
+        'dependencies': ['dependencies', 'depends_on']
+    }
+    
+    for header in headers:
+        header = header.strip().lower()
+        for column, aliases in expected_columns.items():
+            if header in aliases:
+                column_mapping[column] = header
+                break
+    
+    return column_mapping
