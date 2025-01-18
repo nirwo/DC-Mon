@@ -14,19 +14,23 @@ class Application(db.Model):
     state = db.Column(db.String(20), default='unknown')  # up, down, partial, unknown
     shutdown_order = db.Column(db.Integer, default=100)
     _dependencies = db.Column('dependencies', db.Text, default='')
+    completed = db.Column(db.Boolean, default=False)
+    completed_at = db.Column(db.DateTime)
     
     instances = db.relationship('ApplicationInstance', backref='application', lazy=True, cascade='all, delete-orphan')
     
     @property
     def dependencies(self):
-        return self._dependencies.split(';') if self._dependencies else []
+        if not self._dependencies:
+            return []
+        return [int(x) for x in self._dependencies.split(',') if x]
     
     @dependencies.setter
     def dependencies(self, value):
         if isinstance(value, list):
-            self._dependencies = ';'.join(value)
+            self._dependencies = ','.join(str(x) for x in value)
         else:
-            self._dependencies = value
+            self._dependencies = str(value)
 
 class ApplicationInstance(db.Model):
     id = db.Column(db.Integer, primary_key=True)

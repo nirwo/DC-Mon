@@ -420,45 +420,15 @@ def check_all_status():
 def get_application(app_id):
     try:
         app = Application.query.get_or_404(app_id)
-        
-        # Calculate application state
-        all_running = True
-        all_stopped = True
-        
-        for instance in app.instances:
-            try:
-                url = instance.webui_url
-                if not url:
-                    url = f"http://{instance.host}"
-                    if instance.port:
-                        url += f":{instance.port}"
-                
-                response = requests.get(url, timeout=5)
-                if response.status_code == 200:
-                    instance.status = 'running'
-                    all_stopped = False
-                else:
-                    instance.status = 'stopped'
-                    all_running = False
-            except:
-                instance.status = 'stopped'
-                all_running = False
-        
-        # Determine overall state
-        if all_running:
-            app_state = 'up'
-        elif all_stopped:
-            app_state = 'down'
-        else:
-            app_state = 'partial'
-        
         return jsonify({
             'status': 'success',
             'data': {
                 'id': app.id,
                 'name': app.name,
                 'team_id': app.team_id,
-                'state': app_state,
+                'state': app.state,
+                'shutdown_order': app.shutdown_order,
+                'dependencies': app.dependencies,
                 'instances': [{
                     'id': inst.id,
                     'host': inst.host,
@@ -481,36 +451,34 @@ def update_application(app_id):
         if not data:
             return jsonify({'status': 'error', 'message': 'No data provided'}), 400
         
-        if 'name' not in data or 'team_id' not in data:
-            return jsonify({'status': 'error', 'message': 'Missing required fields: name, team_id'}), 400
+        if 'name' not in data or not data['name']:
+            return jsonify({'status': 'error', 'message': 'Application name is required'}), 400
         
         # Update application details
         app.name = data['name']
         app.team_id = data['team_id']
+        app.shutdown_order = data.get('shutdown_order', 100)
+        app.dependencies = data.get('dependencies', [])
         
         # Update instances
         if 'instances' in data:
-            # Keep track of updated instance IDs
             updated_ids = set()
             
             for inst_data in data['instances']:
-                if not isinstance(inst_data, dict):
-                    continue
-                    
                 if 'id' in inst_data and inst_data['id']:
                     # Update existing instance
-                    instance = ApplicationInstance.query.get(inst_data['id'])
-                    if instance and instance.application_id == app.id:
-                        instance.host = inst_data.get('host', instance.host)
-                        instance.port = inst_data.get('port', instance.port)
-                        instance.webui_url = inst_data.get('webui_url', instance.webui_url)
-                        instance.db_host = inst_data.get('db_host', instance.db_host)
+                    instance = next((i for i in app.instances if i.id == inst_data['id']), None)
+                    if instance:
+                        instance.host = inst_data['host']
+                        instance.port = inst_data.get('port')
+                        instance.webui_url = inst_data.get('webui_url')
+                        instance.db_host = inst_data.get('db_host')
                         updated_ids.add(instance.id)
                 else:
                     # Create new instance
                     instance = ApplicationInstance(
-                        application_id=app.id,
-                        host=inst_data.get('host'),
+                        application=app,
+                        host=inst_data['host'],
                         port=inst_data.get('port'),
                         webui_url=inst_data.get('webui_url'),
                         db_host=inst_data.get('db_host')
@@ -526,18 +494,13 @@ def update_application(app_id):
         
         return jsonify({
             'status': 'success',
-            'message': 'Application updated successfully',
+            'message': f'Application {app.name} updated successfully',
             'data': {
                 'id': app.id,
                 'name': app.name,
                 'team_id': app.team_id,
-                'instances': [{
-                    'id': inst.id,
-                    'host': inst.host,
-                    'port': inst.port,
-                    'webui_url': inst.webui_url,
-                    'db_host': inst.db_host
-                } for inst in app.instances]
+                'shutdown_order': app.shutdown_order,
+                'dependencies': app.dependencies
             }
         })
         
@@ -565,14 +528,51 @@ def get_shutdown_sequence(app_id):
                     deps.append(dep)
                     get_dependencies(dep)
             
+            # Sort by shutdown order
             deps.sort(key=lambda x: x.shutdown_order)
-            sequence.extend(deps)
             
             # Add current app if not already in sequence
             if current_app not in sequence:
                 sequence.append(current_app)
+            
+            # Add dependencies after current app
+            for dep in deps:
+                if dep not in sequence:
+                    sequence.append(dep)
         
+        # Start with the target app
         get_dependencies(app)
+        
+        # Calculate states
+        for app in sequence:
+            all_running = True
+            all_stopped = True
+            
+            for instance in app.instances:
+                try:
+                    url = instance.webui_url
+                    if not url:
+                        url = f"http://{instance.host}"
+                        if instance.port:
+                            url += f":{instance.port}"
+                    
+                    response = requests.get(url, timeout=5)
+                    if response.status_code == 200:
+                        instance.status = 'running'
+                        all_stopped = False
+                    else:
+                        instance.status = 'stopped'
+                        all_running = False
+                except:
+                    instance.status = 'stopped'
+                    all_running = False
+            
+            if all_running:
+                app.state = 'up'
+            elif all_stopped:
+                app.state = 'down'
+            else:
+                app.state = 'partial'
         
         # Format sequence for response
         sequence_data = [{
@@ -588,6 +588,63 @@ def get_shutdown_sequence(app_id):
         })
         
     except Exception as e:
+        print(f"Error getting shutdown sequence: {str(e)}")  # Debug log
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 400
+
+@main.route('/mark_completed/<int:app_id>', methods=['POST'])
+def mark_completed(app_id):
+    try:
+        app = Application.query.get_or_404(app_id)
+        app.completed = True
+        app.completed_at = datetime.utcnow()
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Application {app.name} marked as completed'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 400
+
+@main.route('/reactivate_application/<int:app_id>', methods=['POST'])
+def reactivate_application(app_id):
+    try:
+        app = Application.query.get_or_404(app_id)
+        app.completed = False
+        app.completed_at = None
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Application {app.name} reactivated'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 400
+
+@main.route('/delete_application/<int:app_id>', methods=['DELETE'])
+def delete_application(app_id):
+    try:
+        app = Application.query.get_or_404(app_id)
+        db.session.delete(app)
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Application {app.name} deleted'
+        })
+    except Exception as e:
+        db.session.rollback()
         return jsonify({
             'status': 'error',
             'message': str(e)
