@@ -9,19 +9,15 @@ def create_app():
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///shutdown_manager.db'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
-    # Optimize SQLAlchemy for better performance
+    # Basic SQLAlchemy settings
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'pool_pre_ping': True,
         'pool_recycle': 300,
-        'pool_timeout': 900,
-        'pool_size': 50,
-        'max_overflow': 100,
     }
     
-    # Increase SQLite performance
+    # SQLite optimizations
     app.config['SQLALCHEMY_ENGINE_OPTIONS']['connect_args'] = {
         'timeout': 60,
-        'isolation_level': None,  # Autocommit mode
         'check_same_thread': False
     }
     
@@ -30,6 +26,8 @@ def create_app():
     with app.app_context():
         from .routes import main
         app.register_blueprint(main)
+        
+        # Create tables if they don't exist
         db.create_all()
         
     return app

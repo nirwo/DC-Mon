@@ -258,9 +258,12 @@ def import_apps():
         imported = updated = skipped = 0
         errors = []
         
-        # Cache teams for better performance
+        # Cache teams and apps for better performance
         team_cache = {}
         app_cache = {}
+        
+        # Store dependencies for later processing
+        dependencies_to_process = []
         
         # Delete all if replace mode
         if merge_mode == 'replace':
@@ -281,7 +284,6 @@ def import_apps():
                     if not team:
                         team = Team(name=team_name)
                         db.session.add(team)
-                        db.session.flush()  # Get ID without committing
                     team_cache[team_name] = team
                 
                 # Get or create application
@@ -306,33 +308,61 @@ def import_apps():
                 
                 # Update application
                 app.team = team
-                app.shutdown_order = int(row.get('shutdown_order', 100))
-                app.dependencies = row.get('dependencies', '').split(';') if row.get('dependencies') else []
+                
+                # Safely parse shutdown_order
+                try:
+                    shutdown_order = int(row.get('shutdown_order', '100').strip())
+                except (ValueError, TypeError):
+                    shutdown_order = 100
+                app.shutdown_order = shutdown_order
+                
+                # Store dependencies for later processing
+                dependencies = row.get('dependencies', '').strip()
+                if dependencies:
+                    dependencies_to_process.append((app, dependencies))
                 
                 if not app.id:
                     db.session.add(app)
-                    db.session.flush()  # Get ID without committing
+                
+                # Safely parse port
+                port_str = row.get('port', '').strip()
+                try:
+                    port = int(port_str) if port_str else None
+                except ValueError:
+                    port = None
+                    if port_str:  # Only add error if port was provided but invalid
+                        errors.append(f"Invalid port number '{port_str}' in row {reader.line_num}, using None")
                 
                 # Create instance
                 instance = ApplicationInstance(
                     application=app,
                     host=row['host'].strip(),
-                    port=int(row['port']) if row.get('port') else None,
+                    port=port,
                     webui_url=row.get('webui_url', '').strip() or None,
                     db_host=row.get('db_host', '').strip() or None
                 )
                 db.session.add(instance)
                 
-                # Commit every 100 rows for memory efficiency
-                if (imported + updated + skipped) % 100 == 0:
-                    db.session.commit()
-                
             except Exception as e:
                 errors.append(f"Error processing row {reader.line_num}: {str(e)}")
                 continue
         
-        # Final commit
-        db.session.commit()
+        # Process dependencies after all applications are created
+        for app, dependencies_str in dependencies_to_process:
+            dependency_names = [d.strip() for d in dependencies_str.split(';') if d.strip()]
+            app.dependencies = []  # Clear existing dependencies
+            for dep_name in dependency_names:
+                if dep_app := app_cache.get(dep_name):
+                    app.dependencies.append(dep_app.name)
+                else:
+                    errors.append(f"Warning: Dependency '{dep_name}' for application '{app.name}' not found")
+        
+        # Commit all changes at once
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'Database error: {str(e)}'}), 500
         
         return jsonify({
             'imported': imported,
