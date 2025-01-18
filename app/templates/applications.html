@@ -21,6 +21,7 @@
                     <thead>
                         <tr>
                             <th>Name</th>
+                            <th>Status</th>
                             <th>Team</th>
                             <th>Instances</th>
                             <th>Actions</th>
@@ -30,6 +31,12 @@
                         {% for app in applications %}
                         <tr data-app-id="{{ app.id }}">
                             <td>{{ app.name }}</td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <span class="app-status {{ app.state }}"></span>
+                                    {{ app.state|title }}
+                                </div>
+                            </td>
                             <td>{{ app.team.name }}</td>
                             <td>
                                 {% for instance in app.instances %}
@@ -70,21 +77,21 @@
                             <td>
                                 <div class="btn-group">
                                     <button class="btn btn-sm btn-outline-primary" 
-                                            onclick="editApplication('{{ app.id }}')"
+                                            onclick="editApplication({{ app.id }})"
                                             data-bs-toggle="tooltip" 
                                             data-bs-placement="top" 
                                             title="Edit Application">
                                         <i class="bi bi-pencil"></i>
                                     </button>
                                     <button class="btn btn-sm btn-outline-info" 
-                                            onclick="checkStatus('{{ app.id }}')"
+                                            onclick="checkStatus({{ app.id }})"
                                             data-bs-toggle="tooltip" 
                                             data-bs-placement="top" 
                                             title="Check Status">
                                         <i class="bi bi-arrow-clockwise"></i>
                                     </button>
                                     <button class="btn btn-sm btn-outline-danger" 
-                                            onclick="confirmShutdown('{{ app.id }}')"
+                                            onclick="confirmShutdown({{ app.id }})"
                                             data-bs-toggle="tooltip" 
                                             data-bs-placement="top" 
                                             title="Shutdown Application">
@@ -118,6 +125,82 @@
 <!-- Import Modal -->
 {% include 'import_modal.html' %}
 
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Application</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="alertContainer"></div>
+                <form id="editForm">
+                    <input type="hidden" id="editAppId">
+                    <div class="mb-3">
+                        <label class="form-label">Application Name</label>
+                        <input type="text" class="form-control" id="editAppName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Team</label>
+                        <select class="form-select" id="editTeam" required>
+                            {% for team in teams %}
+                            <option value="{{ team.id }}">{{ team.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Instances</label>
+                        <div id="instancesList">
+                            <!-- Instances will be added here dynamically -->
+                        </div>
+                        <button type="button" class="btn btn-outline-primary mt-2" onclick="addInstance()">
+                            <i class="bi bi-plus-circle me-1"></i>Add Instance
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveApplication()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<template id="instanceTemplate">
+    <div class="instance-edit card mb-3">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-3">
+                <h6 class="card-title mb-0">Instance</h6>
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeInstance(this)">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+            <input type="hidden" class="instance-id">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Host</label>
+                    <input type="text" class="form-control instance-host" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Port</label>
+                    <input type="number" class="form-control instance-port">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">WebUI URL</label>
+                    <input type="url" class="form-control instance-webui">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Database Host</label>
+                    <input type="text" class="form-control instance-db">
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize tooltips
@@ -139,7 +222,147 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function editApplication(id) {
-    // TODO: Implement edit functionality
+    console.log('Editing application:', id);
+    // Clear previous data
+    document.getElementById('instancesList').innerHTML = '';
+    
+    // Load application data
+    fetch(`/get_application/${id}`)
+        .then(response => response.json())
+        .then(result => {
+            console.log('Application data:', result);
+            if (result.status === 'success') {
+                const data = result.data;
+                document.getElementById('editAppId').value = data.id;
+                document.getElementById('editAppName').value = data.name;
+                document.getElementById('editTeam').value = data.team_id;
+                
+                // Add instances
+                data.instances.forEach(instance => {
+                    addInstance(instance);
+                });
+                
+                // Show modal
+                const modal = new bootstrap.Modal(document.getElementById('editModal'));
+                modal.show();
+            } else {
+                showAlert('danger', result.message || 'Failed to load application');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading application:', error);
+            showAlert('danger', 'Failed to load application: ' + error.message);
+        });
+}
+
+function addInstance(data = null) {
+    console.log('Adding instance:', data);
+    const template = document.getElementById('instanceTemplate');
+    const clone = template.content.cloneNode(true);
+    const container = document.getElementById('instancesList');
+    
+    if (data) {
+        clone.querySelector('.instance-id').value = data.id;
+        clone.querySelector('.instance-host').value = data.host;
+        clone.querySelector('.instance-port').value = data.port;
+        clone.querySelector('.instance-webui').value = data.webui_url;
+        clone.querySelector('.instance-db').value = data.db_host;
+    }
+
+    // Add event listener for WebUI URL changes
+    const webuiInput = clone.querySelector('.instance-webui');
+    const portInput = clone.querySelector('.instance-port');
+    
+    webuiInput.addEventListener('change', function() {
+        try {
+            if (this.value) {
+                const url = new URL(this.value);
+                // Set port based on protocol if not explicitly set in URL
+                if (!url.port) {
+                    if (url.protocol === 'https:') {
+                        portInput.value = '443';
+                    } else if (url.protocol === 'http:') {
+                        portInput.value = '80';
+                    }
+                } else {
+                    portInput.value = url.port;
+                }
+            }
+        } catch (e) {
+            console.error('Invalid URL:', e);
+        }
+    });
+    
+    container.appendChild(clone);
+}
+
+function removeInstance(button) {
+    button.closest('.instance-edit').remove();
+}
+
+function showAlert(type, message) {
+    const alertContainer = document.getElementById('alertContainer');
+    const alert = document.createElement('div');
+    alert.className = `alert alert-${type} alert-dismissible fade show`;
+    alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    alertContainer.innerHTML = '';
+    alertContainer.appendChild(alert);
+}
+
+function saveApplication() {
+    console.log('Saving application...');
+    const id = document.getElementById('editAppId').value;
+    const instances = [];
+    
+    // Collect instances data
+    document.querySelectorAll('.instance-edit').forEach(inst => {
+        const port = inst.querySelector('.instance-port').value;
+        instances.push({
+            id: inst.querySelector('.instance-id').value || null,
+            host: inst.querySelector('.instance-host').value,
+            port: port ? parseInt(port) : null,
+            webui_url: inst.querySelector('.instance-webui').value,
+            db_host: inst.querySelector('.instance-db').value
+        });
+    });
+    
+    const data = {
+        name: document.getElementById('editAppName').value,
+        team_id: parseInt(document.getElementById('editTeam').value),
+        instances: instances
+    };
+    
+    console.log('Saving data:', data);
+    
+    fetch(`/update_application/${id}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => {
+        console.log('Save response:', response);
+        return response.json();
+    })
+    .then(data => {
+        console.log('Save result:', data);
+        if (data.status === 'success') {
+            showAlert('success', data.message);
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            showAlert('danger', data.message || 'Failed to update application');
+        }
+    })
+    .catch(error => {
+        console.error('Save error:', error);
+        showAlert('danger', 'Failed to update application: ' + error.message);
+    });
 }
 
 function checkStatus(id) {
@@ -157,31 +380,45 @@ function checkStatus(id) {
             data.results.forEach(result => {
                 const instanceRow = row.querySelector(`[data-host="${result.host}"]`);
                 const badge = instanceRow.querySelector('.badge');
+                const statusDiv = instanceRow.querySelector('.status-message') || document.createElement('div');
+                statusDiv.className = 'status-message small mt-1';
                 
                 switch(result.status) {
                     case 'running':
                         badge.className = 'badge bg-success';
                         badge.innerHTML = '<i class="bi bi-check-circle me-1"></i>Running';
+                        statusDiv.className += ' text-success';
+                        statusDiv.innerHTML = result.message || 'Service is running normally';
                         break;
                     case 'stopped':
                         badge.className = 'badge bg-danger';
                         badge.innerHTML = '<i class="bi bi-x-circle me-1"></i>Stopped';
+                        statusDiv.className += ' text-danger';
+                        statusDiv.innerHTML = result.message || 'Service is not running';
                         break;
                     case 'in_progress':
                         badge.className = 'badge bg-info';
                         badge.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>In Progress';
+                        statusDiv.className += ' text-info';
+                        statusDiv.innerHTML = result.message || 'Operation in progress';
                         break;
                     case 'unknown':
                         badge.className = 'badge bg-secondary';
                         badge.innerHTML = '<i class="bi bi-question-circle me-1"></i>Unknown';
+                        statusDiv.className += ' text-secondary';
+                        statusDiv.innerHTML = result.message || 'Unable to determine status';
                         break;
                     case 'error':
                         badge.className = 'badge bg-danger';
                         badge.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Error';
-                        if (result.message) {
-                            console.error(`Error checking ${result.host}:${result.port} - ${result.message}`);
-                        }
+                        statusDiv.className += ' text-danger';
+                        statusDiv.innerHTML = result.message || 'An error occurred while checking status';
                         break;
+                }
+                
+                // Add status message if not already present
+                if (!instanceRow.querySelector('.status-message')) {
+                    instanceRow.appendChild(statusDiv);
                 }
             });
         })
@@ -190,6 +427,14 @@ function checkStatus(id) {
             statusBadges.forEach(badge => {
                 badge.className = 'badge bg-danger';
                 badge.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Error';
+                
+                const statusDiv = badge.closest('.instance-row').querySelector('.status-message') || document.createElement('div');
+                statusDiv.className = 'status-message small mt-1 text-danger';
+                statusDiv.innerHTML = error.message || 'Failed to check status';
+                
+                if (!badge.closest('.instance-row').querySelector('.status-message')) {
+                    badge.closest('.instance-row').appendChild(statusDiv);
+                }
             });
         });
 }

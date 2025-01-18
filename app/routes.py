@@ -4,13 +4,15 @@ from app.utils import check_application_status
 import csv
 from datetime import datetime
 import socket
+import requests
 
 main = Blueprint('main', __name__)
 
 @main.route('/')
 def index():
     applications = Application.query.all()
-    return render_template('applications.html', applications=applications)
+    teams = Team.query.all()
+    return render_template('applications.html', applications=applications, teams=teams)
 
 @main.route('/teams')
 def teams():
@@ -185,49 +187,46 @@ def import_apps():
 
 @main.route('/check_status/<int:app_id>')
 def check_status(app_id):
-    app = Application.query.get_or_404(app_id)
-    results = []
-    for instance in app.instances:
-        try:
-            # Try to connect to the host and port
-            if not instance.port:  # Skip if no port specified
-                instance.status = 'unknown'
-                results.append({
-                    'host': instance.host,
-                    'port': None,
-                    'status': 'unknown',
-                    'message': 'No port specified'
-                })
-                continue
+    try:
+        app = Application.query.get_or_404(app_id)
+        results = []
+        
+        for instance in app.instances:
+            try:
+                url = instance.webui_url
+                if not url:
+                    url = f"http://{instance.host}"
+                    if instance.port:
+                        url += f":{instance.port}"
                 
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)  # 2 second timeout
-            result = sock.connect_ex((instance.host, instance.port))
-            sock.close()
+                response = requests.get(url, timeout=5)
+                
+                if response.status_code == 200:
+                    status = 'running'
+                    message = f'Service responded with status code {response.status_code}'
+                else:
+                    status = 'error'
+                    message = f'Service returned unexpected status code: {response.status_code}'
+            except requests.exceptions.ConnectionError as e:
+                status = 'stopped'
+                message = 'Connection refused - service may be down'
+            except requests.exceptions.Timeout as e:
+                status = 'error'
+                message = 'Request timed out - service may be unresponsive'
+            except requests.exceptions.RequestException as e:
+                status = 'error'
+                message = str(e)
             
-            if result == 0:
-                instance.status = 'running'
-            else:
-                instance.status = 'stopped'
-                
-            instance.last_checked = datetime.utcnow()
             results.append({
                 'host': instance.host,
                 'port': instance.port,
-                'status': instance.status
+                'status': status,
+                'message': message
             })
-        except Exception as e:
-            instance.status = 'unknown'
-            instance.last_checked = datetime.utcnow()
-            results.append({
-                'host': instance.host,
-                'port': instance.port,
-                'status': 'error',
-                'message': str(e)
-            })
-    
-    db.session.commit()
-    return jsonify({'status': 'success', 'results': results})
+        
+        return jsonify({'results': results})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
 
 @main.route('/check_instance_status/<int:instance_id>')
 def check_instance_status(instance_id):
@@ -277,24 +276,72 @@ def check_instance_status(instance_id):
 
 @main.route('/shutdown_app/<int:app_id>', methods=['POST'])
 def shutdown_app(app_id):
-    app = Application.query.get_or_404(app_id)
     try:
-        # Mark all instances as in_progress
-        for instance in app.instances:
-            instance.status = 'in_progress'
-        db.session.commit()
+        app = Application.query.get_or_404(app_id)
         
-        # Here you would typically trigger an async task to handle the actual shutdown
-        # For now, we'll just simulate success
+        # Get shutdown sequence
+        sequence = []
+        visited = set()
+        
+        def get_dependencies(current_app):
+            if current_app.id in visited:
+                return
+            visited.add(current_app.id)
+            
+            # Get dependencies and sort by shutdown order
+            deps = []
+            for dep_id in current_app.dependencies:
+                dep = Application.query.get(dep_id)
+                if dep:
+                    deps.append(dep)
+                    get_dependencies(dep)
+            
+            deps.sort(key=lambda x: x.shutdown_order)
+            sequence.extend(deps)
+            
+            # Add current app if not already in sequence
+            if current_app not in sequence:
+                sequence.append(current_app)
+        
+        get_dependencies(app)
+        
+        # Start shutdown process for each app in sequence
+        for app in sequence:
+            app.state = 'down'
+            for instance in app.instances:
+                try:
+                    url = instance.webui_url
+                    if not url:
+                        url = f"http://{instance.host}"
+                        if instance.port:
+                            url += f":{instance.port}"
+                    
+                    # Send shutdown request
+                    response = requests.post(f"{url}/shutdown", timeout=5)
+                    if response.status_code != 200:
+                        return jsonify({
+                            'status': 'error',
+                            'message': f'Failed to shutdown {app.name} - {instance.host}: Unexpected status code {response.status_code}'
+                        }), 400
+                        
+                except requests.exceptions.RequestException as e:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Failed to shutdown {app.name} - {instance.host}: {str(e)}'
+                    }), 400
+        
+        db.session.commit()
         return jsonify({
             'status': 'success',
-            'message': f'Shutdown initiated for {app.name}'
+            'message': 'Shutdown sequence initiated successfully'
         })
+        
     except Exception as e:
+        db.session.rollback()
         return jsonify({
             'status': 'error',
             'message': str(e)
-        }), 500
+        }), 400
 
 @main.route('/shutdown_instance/<int:instance_id>', methods=['POST'])
 def shutdown_instance(instance_id):
@@ -368,3 +415,180 @@ def check_all_status():
         })
     db.session.commit()
     return jsonify(results)
+
+@main.route('/get_application/<int:app_id>')
+def get_application(app_id):
+    try:
+        app = Application.query.get_or_404(app_id)
+        
+        # Calculate application state
+        all_running = True
+        all_stopped = True
+        
+        for instance in app.instances:
+            try:
+                url = instance.webui_url
+                if not url:
+                    url = f"http://{instance.host}"
+                    if instance.port:
+                        url += f":{instance.port}"
+                
+                response = requests.get(url, timeout=5)
+                if response.status_code == 200:
+                    instance.status = 'running'
+                    all_stopped = False
+                else:
+                    instance.status = 'stopped'
+                    all_running = False
+            except:
+                instance.status = 'stopped'
+                all_running = False
+        
+        # Determine overall state
+        if all_running:
+            app_state = 'up'
+        elif all_stopped:
+            app_state = 'down'
+        else:
+            app_state = 'partial'
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'id': app.id,
+                'name': app.name,
+                'team_id': app.team_id,
+                'state': app_state,
+                'instances': [{
+                    'id': inst.id,
+                    'host': inst.host,
+                    'port': inst.port,
+                    'webui_url': inst.webui_url,
+                    'db_host': inst.db_host,
+                    'status': inst.status
+                } for inst in app.instances]
+            }
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+@main.route('/update_application/<int:app_id>', methods=['POST'])
+def update_application(app_id):
+    try:
+        app = Application.query.get_or_404(app_id)
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+        
+        if 'name' not in data or 'team_id' not in data:
+            return jsonify({'status': 'error', 'message': 'Missing required fields: name, team_id'}), 400
+        
+        # Update application details
+        app.name = data['name']
+        app.team_id = data['team_id']
+        
+        # Update instances
+        if 'instances' in data:
+            # Keep track of updated instance IDs
+            updated_ids = set()
+            
+            for inst_data in data['instances']:
+                if not isinstance(inst_data, dict):
+                    continue
+                    
+                if 'id' in inst_data and inst_data['id']:
+                    # Update existing instance
+                    instance = ApplicationInstance.query.get(inst_data['id'])
+                    if instance and instance.application_id == app.id:
+                        instance.host = inst_data.get('host', instance.host)
+                        instance.port = inst_data.get('port', instance.port)
+                        instance.webui_url = inst_data.get('webui_url', instance.webui_url)
+                        instance.db_host = inst_data.get('db_host', instance.db_host)
+                        updated_ids.add(instance.id)
+                else:
+                    # Create new instance
+                    instance = ApplicationInstance(
+                        application_id=app.id,
+                        host=inst_data.get('host'),
+                        port=inst_data.get('port'),
+                        webui_url=inst_data.get('webui_url'),
+                        db_host=inst_data.get('db_host')
+                    )
+                    db.session.add(instance)
+            
+            # Remove instances that weren't updated
+            for instance in app.instances:
+                if instance.id not in updated_ids:
+                    db.session.delete(instance)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Application updated successfully',
+            'data': {
+                'id': app.id,
+                'name': app.name,
+                'team_id': app.team_id,
+                'instances': [{
+                    'id': inst.id,
+                    'host': inst.host,
+                    'port': inst.port,
+                    'webui_url': inst.webui_url,
+                    'db_host': inst.db_host
+                } for inst in app.instances]
+            }
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+@main.route('/get_shutdown_sequence/<int:app_id>')
+def get_shutdown_sequence(app_id):
+    try:
+        app = Application.query.get_or_404(app_id)
+        sequence = []
+        visited = set()
+        
+        def get_dependencies(current_app):
+            if current_app.id in visited:
+                return
+            visited.add(current_app.id)
+            
+            # Get dependencies and sort by shutdown order
+            deps = []
+            for dep_id in current_app.dependencies:
+                dep = Application.query.get(dep_id)
+                if dep:
+                    deps.append(dep)
+                    get_dependencies(dep)
+            
+            deps.sort(key=lambda x: x.shutdown_order)
+            sequence.extend(deps)
+            
+            # Add current app if not already in sequence
+            if current_app not in sequence:
+                sequence.append(current_app)
+        
+        get_dependencies(app)
+        
+        # Format sequence for response
+        sequence_data = [{
+            'id': app.id,
+            'name': app.name,
+            'shutdown_order': app.shutdown_order,
+            'state': app.state
+        } for app in sequence]
+        
+        return jsonify({
+            'status': 'success',
+            'sequence': sequence_data
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 400

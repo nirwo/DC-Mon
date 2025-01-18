@@ -276,17 +276,19 @@ document.getElementById('importButton').addEventListener('click', async function
                     ` : ''}
                 </div>
             `;
-        }
-        
-        // Hide buttons except close
-        document.getElementById('prevStep').style.display = 'none';
-        document.getElementById('importButton').style.display = 'none';
-        
-        // Refresh the page after 2 seconds on success
-        if (!result.error) {
-            setTimeout(() => {
+            
+            // Show finish button
+            document.getElementById('importButton').style.display = 'none';
+            document.getElementById('prevStep').style.display = 'none';
+            const finishButton = document.createElement('button');
+            finishButton.className = 'btn btn-success';
+            finishButton.textContent = 'Finish';
+            finishButton.onclick = () => {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('importModal'));
+                modal.hide();
                 window.location.reload();
-            }, 2000);
+            };
+            document.querySelector('.modal-footer').appendChild(finishButton);
         }
         
     } catch (error) {
@@ -302,4 +304,5 @@ document.getElementById('importButton').addEventListener('click', async function
         progressStatus.style.display = 'none';
     }
 });
+
 </script>

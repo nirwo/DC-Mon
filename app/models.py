@@ -11,8 +11,10 @@ class Application(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
+    state = db.Column(db.String(20), default='unknown')  # up, down, partial, unknown
     shutdown_order = db.Column(db.Integer, default=100)
     _dependencies = db.Column('dependencies', db.Text, default='')
+    
     instances = db.relationship('ApplicationInstance', backref='application', lazy=True, cascade='all, delete-orphan')
     
     @property
