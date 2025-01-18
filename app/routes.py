@@ -60,106 +60,119 @@ def import_apps():
             Team.query.delete()
             db.session.commit()
         
-        # Process each row
-        for row in reader:
-            try:
-                # Get or create team
-                team_name = row['team'].strip()
-                if team_name in team_cache:
-                    team = team_cache[team_name]
-                else:
-                    team = Team.query.filter_by(name=team_name).first()
-                    if not team:
-                        team = Team(name=team_name)
-                        db.session.add(team)
-                    team_cache[team_name] = team
-                
-                # Get or create application
-                app_name = row['name'].strip()
-                if app_name in app_cache:
-                    app = app_cache[app_name]
-                    if merge_mode == 'skip':
-                        skipped += 1
-                        continue
-                else:
-                    app = Application.query.filter_by(name=app_name).first()
-                    if app:
+        # Process rows in chunks
+        CHUNK_SIZE = 100
+        rows = list(reader)
+        total_rows = len(rows)
+        
+        for i in range(0, total_rows, CHUNK_SIZE):
+            chunk = rows[i:i + CHUNK_SIZE]
+            
+            # Process each row in the chunk
+            for row in chunk:
+                try:
+                    # Get or create team
+                    team_name = row['team'].strip()
+                    if team_name in team_cache:
+                        team = team_cache[team_name]
+                    else:
+                        team = Team.query.filter_by(name=team_name).first()
+                        if not team:
+                            team = Team(name=team_name)
+                            db.session.add(team)
+                        team_cache[team_name] = team
+                    
+                    # Get or create application
+                    app_name = row['name'].strip()
+                    if app_name in app_cache:
+                        app = app_cache[app_name]
                         if merge_mode == 'skip':
                             skipped += 1
                             continue
-                        elif merge_mode == 'merge':
-                            updated += 1
                     else:
-                        app = Application(name=app_name)
-                        imported += 1
-                    app_cache[app_name] = app
-                
-                # Update application
-                app.team = team
-                
-                # Safely parse shutdown_order
-                try:
-                    shutdown_order = int(row.get('shutdown_order', '100').strip())
-                except (ValueError, TypeError):
-                    shutdown_order = 100
-                app.shutdown_order = shutdown_order
-                
-                # Store dependencies for later processing
-                dependencies = row.get('dependencies', '').strip()
-                if dependencies:
-                    dependencies_to_process.append((app, dependencies))
-                
-                if not app.id:
+                        app = Application.query.filter_by(name=app_name).first()
+                        if app:
+                            if merge_mode == 'skip':
+                                skipped += 1
+                                continue
+                            elif merge_mode == 'merge':
+                                updated += 1
+                        else:
+                            app = Application(name=app_name)
+                            imported += 1
+                        app_cache[app_name] = app
+                    
+                    # Update application
+                    app.team = team
+                    
+                    # Safely parse shutdown_order
+                    try:
+                        shutdown_order = int(row.get('shutdown_order', 0))
+                        app.shutdown_order = max(0, min(100, shutdown_order))
+                    except (ValueError, TypeError):
+                        app.shutdown_order = 0
+                    
+                    # Create instance
+                    host = row['host'].strip()
+                    port = row.get('port', '').strip()
+                    webui_url = row.get('webui_url', '').strip()
+                    db_host = row.get('db_host', '').strip()
+                    
+                    instance = ApplicationInstance(
+                        host=host,
+                        port=port if port else None,
+                        webui_url=webui_url if webui_url else None,
+                        db_host=db_host if db_host else None
+                    )
+                    
+                    app.instances.append(instance)
+                    db.session.add(instance)
+                    
+                    # Store dependencies
+                    if 'dependencies' in row and row['dependencies']:
+                        dependencies_to_process.append((app, row['dependencies']))
+                    
                     db.session.add(app)
                 
-                # Safely parse port
-                port_str = row.get('port', '').strip()
-                try:
-                    port = int(port_str) if port_str else None
-                except ValueError:
-                    port = None
-                    if port_str:  # Only add error if port was provided but invalid
-                        errors.append(f"Invalid port number '{port_str}' in row {reader.line_num}, using None")
-                
-                # Create instance
-                instance = ApplicationInstance(
-                    application=app,
-                    host=row['host'].strip(),
-                    port=port,
-                    webui_url=row.get('webui_url', '').strip() or None,
-                    db_host=row.get('db_host', '').strip() or None
-                )
-                db.session.add(instance)
-                
+                except Exception as e:
+                    errors.append(f"Error processing row {imported + updated + skipped + 1}: {str(e)}")
+            
+            # Commit chunk
+            try:
+                db.session.commit()
             except Exception as e:
-                errors.append(f"Error processing row {reader.line_num}: {str(e)}")
+                db.session.rollback()
+                errors.append(f"Error committing chunk: {str(e)}")
                 continue
         
-        # Process dependencies after all applications are created
-        for app, dependencies_str in dependencies_to_process:
-            dependency_names = [d.strip() for d in dependencies_str.split(';') if d.strip()]
-            app.dependencies = []  # Clear existing dependencies
-            for dep_name in dependency_names:
-                if dep_app := app_cache.get(dep_name):
-                    app.dependencies.append(dep_app.name)
-                else:
-                    errors.append(f"Warning: Dependency '{dep_name}' for application '{app.name}' not found")
+        # Process dependencies after all apps are created
+        for app, dependencies in dependencies_to_process:
+            try:
+                dep_names = [d.strip() for d in dependencies.split(';') if d.strip()]
+                for dep_name in dep_names:
+                    dep_app = Application.query.filter_by(name=dep_name).first()
+                    if dep_app:
+                        app.dependencies.append(dep_app)
+                    else:
+                        errors.append(f"Warning: Dependency '{dep_name}' not found for app '{app.name}'")
+            except Exception as e:
+                errors.append(f"Error processing dependencies for {app.name}: {str(e)}")
         
-        # Commit all changes at once
+        # Final commit for dependencies
         try:
             db.session.commit()
         except Exception as e:
             db.session.rollback()
-            return jsonify({'error': f'Database error: {str(e)}'}), 500
+            errors.append(f"Error committing dependencies: {str(e)}")
         
         return jsonify({
             'imported': imported,
             'updated': updated,
             'skipped': skipped,
-            'errors': errors if errors else None,
-            'message': f'Import completed: {imported} imported, {updated} updated, {skipped} skipped'
+            'total': total_rows,
+            'errors': errors if errors else None
         })
-        
+    
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500

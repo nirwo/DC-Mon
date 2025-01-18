@@ -204,8 +204,11 @@
                     </div>
                     
                     <!-- Progress -->
-                    <div class="progress" style="display: none;">
+                    <div class="progress mb-3" style="display: none;">
                         <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"></div>
+                    </div>
+                    <div class="progress-status text-center mb-3" style="display: none;">
+                        Processing... <span class="progress-text"></span>
                     </div>
                     
                     <!-- Results -->
@@ -333,18 +336,22 @@ document.getElementById('importButton').addEventListener('click', async function
     // Show progress
     const progress = document.querySelector('.progress');
     const progressBar = progress.querySelector('.progress-bar');
+    const progressStatus = document.querySelector('.progress-status');
+    const progressText = progressStatus.querySelector('.progress-text');
     progress.style.display = 'block';
+    progressStatus.style.display = 'block';
     progressBar.style.width = '0%';
     
     try {
-        // Animate progress
-        let width = 0;
+        // Start progress animation
+        let progress = 0;
         const interval = setInterval(() => {
-            width += 5;
-            if (width <= 90) {
-                progressBar.style.width = width + '%';
+            if (progress < 90) {
+                progress += 1;
+                progressBar.style.width = progress + '%';
+                progressText.textContent = `${progress}%`;
             }
-        }, 100);
+        }, 500);
         
         const response = await fetch('/import_apps', {
             method: 'POST',
@@ -353,6 +360,7 @@ document.getElementById('importButton').addEventListener('click', async function
         
         clearInterval(interval);
         progressBar.style.width = '100%';
+        progressText.textContent = '100%';
         
         const result = await response.json();
         
@@ -372,6 +380,7 @@ document.getElementById('importButton').addEventListener('click', async function
                 <div class="alert alert-success">
                     <h6 class="alert-heading">Import Successful</h6>
                     <p>
+                        <strong>Total Processed:</strong> ${result.total}<br>
                         <strong>Imported:</strong> ${result.imported}<br>
                         <strong>Updated:</strong> ${result.updated}<br>
                         <strong>Skipped:</strong> ${result.skipped}
@@ -379,9 +388,11 @@ document.getElementById('importButton').addEventListener('click', async function
                     ${result.errors ? `
                         <hr>
                         <h6>Warnings:</h6>
-                        <ul class="mb-0">
-                            ${result.errors.map(err => `<li>${err}</li>`).join('')}
-                        </ul>
+                        <div class="warnings-container" style="max-height: 200px; overflow-y: auto;">
+                            <ul class="mb-0">
+                                ${result.errors.map(err => `<li>${err}</li>`).join('')}
+                            </ul>
+                        </div>
                     ` : ''}
                 </div>
             `;
@@ -407,6 +418,8 @@ document.getElementById('importButton').addEventListener('click', async function
                 <p>An unexpected error occurred: ${error.message}</p>
             </div>
         `;
+    } finally {
+        progressStatus.style.display = 'none';
     }
 });
 
