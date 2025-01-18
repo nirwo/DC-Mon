@@ -485,29 +485,16 @@ function createApplication() {
 function saveNewApplication() {
     console.log('Saving new application...');
     const name = document.getElementById('newAppName').value;
-    const teamId = parseInt(document.getElementById('newTeam').value);
-    const shutdownOrder = parseInt(document.getElementById('newShutdownOrder').value);
-    const dependencies = Array.from(document.getElementById('newDependencies').selectedOptions)
+    const team = document.querySelector('#newTeam option:checked').text;
+    const shutdownOrder = parseInt(document.getElementById('newShutdownOrder').value) || 0;
+    const dependencies = Array.from(document.getElementById('newDependencies')?.selectedOptions || [])
         .map(option => parseInt(option.value));
-    const instances = [];
-    
-    // Collect instances data
-    document.querySelectorAll('.new-instance-edit').forEach(inst => {
-        const port = inst.querySelector('.new-instance-port').value;
-        instances.push({
-            host: inst.querySelector('.new-instance-host').value,
-            port: port ? parseInt(port) : null,
-            webui_url: inst.querySelector('.new-instance-webui').value,
-            db_host: inst.querySelector('.new-instance-db').value
-        });
-    });
     
     const data = {
         name: name,
-        team_id: teamId,
-        shutdown_order: shutdownOrder,
-        dependencies: dependencies,
-        instances: instances
+        team: team,
+        shutdownOrder: shutdownOrder,
+        dependencies: dependencies
     };
     
     console.log('Saving data:', data);
@@ -515,20 +502,24 @@ function saveNewApplication() {
     fetch('/create_application', {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
         },
         body: JSON.stringify(data)
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            showAlert('success', data.message);
-            setTimeout(() => {
-                window.location.reload();
-            }, 1000);
-        } else {
-            showAlert('danger', data.message || 'Failed to create application');
+    .then(response => {
+        if (!response.ok) {
+            return response.text().then(text => {
+                throw new Error(`HTTP error! status: ${response.status}, body: ${text}`);
+            });
         }
+        return response.json();
+    })
+    .then(data => {
+        showAlert('success', 'Application created successfully');
+        setTimeout(() => {
+            window.location.reload();
+        }, 1000);
     })
     .catch(error => {
         console.error('Save error:', error);

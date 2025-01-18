@@ -6,6 +6,7 @@ from datetime import datetime
 import socket
 import requests
 
+# Create blueprint
 main = Blueprint('main', __name__)
 
 @main.route('/')
@@ -649,3 +650,50 @@ def delete_application(app_id):
             'status': 'error',
             'message': str(e)
         }), 400
+
+@main.route('/create_application', methods=['POST'])
+def create_application():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Extract data from request
+        name = data.get('name')
+        team_name = data.get('team')
+        shutdown_order = data.get('shutdownOrder')
+        dependencies = data.get('dependencies', [])
+        
+        if not all([name, team_name]):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        # Get or create team
+        team = Team.query.filter_by(name=team_name).first()
+        if not team:
+            team = Team(name=team_name)
+            db.session.add(team)
+            db.session.flush()
+        
+        # Create new application
+        application = Application(
+            name=name,
+            team_id=team.id,
+            shutdown_order=shutdown_order,
+            dependencies=','.join(str(d) for d in dependencies) if dependencies else ''
+        )
+        
+        db.session.add(application)
+        db.session.commit()
+        
+        return jsonify({
+            'id': application.id,
+            'name': application.name,
+            'team': team.name,
+            'shutdownOrder': application.shutdown_order,
+            'dependencies': dependencies,
+            'message': 'Application created successfully'
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Error creating application: {str(e)}')
+        return jsonify({'error': 'Internal server error'}), 500

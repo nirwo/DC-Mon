@@ -31,9 +31,18 @@ def create_app(config_name='development'):
             app.logger.setLevel(logging.INFO)
             app.logger.info('Shutdown Manager startup')
     
-    # Register blueprints
-    from .routes import main
-    app.register_blueprint(main)
+    with app.app_context():
+        # Register blueprints
+        from app.routes import main as main_blueprint
+        app.register_blueprint(main_blueprint)
+        
+        # Ensure all tables exist
+        db.create_all()
+        
+        # Print all registered routes
+        print("\nRegistered Routes:")
+        for rule in app.url_map.iter_rules():
+            print(f"{rule.endpoint}: {rule.rule} [{', '.join(rule.methods)}]")
     
     return app
 
