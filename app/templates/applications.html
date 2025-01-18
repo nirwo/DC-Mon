@@ -8,7 +8,7 @@
         <div class="d-flex justify-content-between mb-3">
             <h2>Applications</h2>
             <div class="btn-group">
-                <button class="btn btn-outline-primary" onclick="document.getElementById('importModal').style.display='block'">
+                <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#importModal">
                     <i class="bi bi-upload"></i> Import
                 </button>
                 <a href="{{ url_for('main.export_template') }}" class="btn btn-outline-secondary">
@@ -17,7 +17,7 @@
                 <a href="{{ url_for('main.export_apps') }}" class="btn btn-outline-success">
                     <i class="bi bi-download"></i> Export
                 </a>
-                <button class="btn btn-outline-primary" onclick="document.getElementById('addApplicationModal').style.display='block'">
+                <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addApplicationModal">
                     <i class="bi bi-plus-lg"></i> Add
                 </button>
             </div>
@@ -467,14 +467,27 @@ function updateApplication() {
 }
 
 function importApplications() {
-    const formData = new FormData(document.getElementById('importForm'));
+    const form = document.getElementById('importForm');
+    const formData = new FormData(form);
+    const fileInput = document.getElementById('csvFile');
+    
+    console.log('Selected file:', fileInput.files[0]); // Debug log
+    
+    if (!fileInput.files.length) {
+        alert('Please select a CSV file');
+        return;
+    }
     
     fetch('/import_apps', {
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        console.log('Response status:', response.status); // Debug log
+        return response.json();
+    })
     .then(data => {
+        console.log('Response data:', data); // Debug log
         if (data.error) {
             alert('Error: ' + data.error + '\n\n' + (data.details || []).join('\n'));
         } else {
@@ -488,7 +501,10 @@ function importApplications() {
     })
     .finally(() => {
         const modal = bootstrap.Modal.getInstance(document.getElementById('importModal'));
-        modal.hide();
+        if (modal) {
+            modal.hide();
+        }
+        form.reset();
     });
 }
 

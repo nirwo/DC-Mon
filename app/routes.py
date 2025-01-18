@@ -191,28 +191,38 @@ def export_apps():
 
 @main.route('/import_apps', methods=['POST'])
 def import_apps():
+    print("Starting import_apps") # Debug log
+    
     if 'file' not in request.files:
+        print("No file in request") # Debug log
         return jsonify({'error': 'No file uploaded'}), 400
         
     file = request.files['file']
     if not file or file.filename == '':
+        print("Empty file or filename") # Debug log
         return jsonify({'error': 'No file selected'}), 400
         
     if not file.filename.endswith('.csv'):
+        print(f"Invalid file type: {file.filename}") # Debug log
         return jsonify({'error': 'File must be a CSV'}), 400
     
     try:
         # Read CSV content
         content = file.read().decode('utf-8-sig')  # Handle BOM if present
+        print(f"CSV content: {content[:200]}...") # Debug log - first 200 chars
+        
         reader = csv.DictReader(StringIO(content))
+        print(f"CSV headers: {reader.fieldnames}") # Debug log
         
         # Map columns
         column_mapping = map_csv_columns(reader.fieldnames)
+        print(f"Column mapping: {column_mapping}") # Debug log
         
         # Validate required fields
         required_fields = ['name', 'team', 'host']
         missing_fields = [field for field in required_fields if field not in column_mapping]
         if missing_fields:
+            print(f"Missing required fields: {missing_fields}") # Debug log
             return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
         
         # Start transaction
@@ -221,15 +231,20 @@ def import_apps():
         errors = []
         
         for row in reader:
+            print(f"Processing row: {row}") # Debug log
             try:
                 # Clean and map values
                 name = clean_csv_value(row.get(column_mapping['name']))
                 team_name = clean_csv_value(row.get(column_mapping['team']))
                 host = clean_csv_value(row.get(column_mapping['host']))
                 
+                print(f"Cleaned values - name: {name}, team: {team_name}, host: {host}") # Debug log
+                
                 # Skip row if required fields are empty
                 if not all([name, team_name, host]):
-                    errors.append(f"Skipping row: missing required fields")
+                    msg = f"Skipping row: missing required fields (name: {name}, team: {team_name}, host: {host})"
+                    print(msg) # Debug log
+                    errors.append(msg)
                     continue
                 
                 # Get optional values
@@ -239,9 +254,12 @@ def import_apps():
                 shutdown_order = clean_csv_value(row.get(column_mapping.get('shutdown_order')))
                 dependencies = clean_csv_value(row.get(column_mapping.get('dependencies')))
                 
+                print(f"Optional values - port: {port}, webui: {webui_url}, db: {db_host}, order: {shutdown_order}, deps: {dependencies}") # Debug log
+                
                 # Get or create team
                 team = Team.query.filter_by(name=team_name).first()
                 if not team:
+                    print(f"Creating new team: {team_name}") # Debug log
                     team = Team(name=team_name)
                     db.session.add(team)
                     db.session.flush()
@@ -249,6 +267,7 @@ def import_apps():
                 # Check if application already exists
                 app = Application.query.filter_by(name=name).first()
                 if app:
+                    print(f"Application already exists: {name}") # Debug log
                     skipped += 1
                     continue
                 
@@ -264,6 +283,7 @@ def import_apps():
                 )
                 db.session.add(app)
                 db.session.flush()
+                print(f"Created new application: {app.name}") # Debug log
                 
                 # Handle dependencies
                 if dependencies:
@@ -274,33 +294,40 @@ def import_apps():
                             if dep_app:
                                 dependency = ApplicationDependency(
                                     application_id=app.id,
-                                    dependency_id=dep_app.id
+                                    dependency_id=dep_app.id,
+                                    dependency_type='shutdown_before'  # Add default dependency type
                                 )
                                 db.session.add(dependency)
+                                print(f"Added dependency: {app.name} -> {dep_app.name}") # Debug log
                 
                 imported += 1
                 
             except Exception as e:
-                errors.append(f"Error importing {row.get(column_mapping['name'], 'unknown')}: {str(e)}")
+                error_msg = f"Error importing {row.get(column_mapping['name'], 'unknown')}: {str(e)}"
+                print(f"Error: {error_msg}") # Debug log
+                errors.append(error_msg)
         
         # Commit transaction if we have successful imports and no errors
         if imported > 0 and not errors:
             db.session.commit()
+            msg = f'Successfully imported {imported} applications ({skipped} skipped)'
+            print(f"Success: {msg}") # Debug log
             return jsonify({
-                'message': f'Successfully imported {imported} applications ({skipped} skipped)',
+                'message': msg,
                 'imported': imported,
                 'skipped': skipped
             })
         else:
             db.session.rollback()
-            return jsonify({
-                'error': 'Import failed',
-                'details': errors
-            }), 400
+            error_msg = {'error': 'Import failed', 'details': errors}
+            print(f"Failed: {error_msg}") # Debug log
+            return jsonify(error_msg), 400
             
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Error processing CSV: {str(e)}'}), 400
+        error_msg = f'Error processing CSV: {str(e)}'
+        print(f"Exception: {error_msg}") # Debug log
+        return jsonify({'error': error_msg}), 400
 
 @main.route('/check_status/<int:app_id>')
 def check_status(app_id):
