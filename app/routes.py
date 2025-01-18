@@ -7,6 +7,37 @@ from datetime import datetime
 
 main = Blueprint('main', __name__)
 
+def clean_csv_value(value):
+    """Clean and validate CSV value"""
+    if value is None:
+        return None
+    value = str(value).strip()
+    return value if value else None
+
+def map_csv_columns(headers):
+    """Map CSV headers to expected column names"""
+    column_mappings = {
+        'name': ['name', 'application_name', 'app_name', 'application'],
+        'team': ['team', 'team_name', 'team_id'],
+        'host': ['host', 'hostname', 'server', 'address'],
+        'port': ['port', 'app_port', 'server_port'],
+        'webui_url': ['webui_url', 'webui', 'web_url', 'url'],
+        'db_host': ['db_host', 'database_host', 'db_server', 'database'],
+        'shutdown_order': ['shutdown_order', 'order', 'priority'],
+        'dependencies': ['dependencies', 'depends_on', 'dependency']
+    }
+    
+    mapped_columns = {}
+    headers_lower = [h.lower().strip() for h in headers]
+    
+    for target_col, possible_names in column_mappings.items():
+        for name in possible_names:
+            if name in headers_lower:
+                mapped_columns[target_col] = headers[headers_lower.index(name)]
+                break
+                
+    return mapped_columns
+
 @main.route('/')
 def index():
     teams = Team.query.all()
@@ -172,53 +203,74 @@ def import_apps():
     
     try:
         # Read CSV content
-        content = file.read().decode('utf-8')
-        csv_data = list(csv.DictReader(StringIO(content)))
+        content = file.read().decode('utf-8-sig')  # Handle BOM if present
+        reader = csv.DictReader(StringIO(content))
         
-        # Validate CSV structure
-        required_fields = ['name', 'team', 'host', 'port', 'shutdown_order']
-        for field in required_fields:
-            if field not in csv_data[0]:
-                return jsonify({'error': f'Missing required field: {field}'}), 400
+        # Map columns
+        column_mapping = map_csv_columns(reader.fieldnames)
+        
+        # Validate required fields
+        required_fields = ['name', 'team', 'host']
+        missing_fields = [field for field in required_fields if field not in column_mapping]
+        if missing_fields:
+            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
         
         # Start transaction
         imported = 0
         skipped = 0
         errors = []
         
-        for row in csv_data:
+        for row in reader:
             try:
+                # Clean and map values
+                name = clean_csv_value(row.get(column_mapping['name']))
+                team_name = clean_csv_value(row.get(column_mapping['team']))
+                host = clean_csv_value(row.get(column_mapping['host']))
+                
+                # Skip row if required fields are empty
+                if not all([name, team_name, host]):
+                    errors.append(f"Skipping row: missing required fields")
+                    continue
+                
+                # Get optional values
+                port = clean_csv_value(row.get(column_mapping.get('port')))
+                webui_url = clean_csv_value(row.get(column_mapping.get('webui_url')))
+                db_host = clean_csv_value(row.get(column_mapping.get('db_host')))
+                shutdown_order = clean_csv_value(row.get(column_mapping.get('shutdown_order')))
+                dependencies = clean_csv_value(row.get(column_mapping.get('dependencies')))
+                
                 # Get or create team
-                team = Team.query.filter_by(name=row['team']).first()
+                team = Team.query.filter_by(name=team_name).first()
                 if not team:
-                    team = Team(name=row['team'])
+                    team = Team(name=team_name)
                     db.session.add(team)
                     db.session.flush()
                 
                 # Check if application already exists
-                app = Application.query.filter_by(name=row['name']).first()
+                app = Application.query.filter_by(name=name).first()
                 if app:
                     skipped += 1
                     continue
                 
                 # Create new application
                 app = Application(
-                    name=row['name'],
+                    name=name,
                     team_id=team.id,
-                    host=row['host'],
-                    port=int(row['port']) if row['port'] else None,
-                    webui_url=row['webui_url'] if row['webui_url'] else None,
-                    db_host=row['db_host'] if row['db_host'] else None,
-                    shutdown_order=int(row['shutdown_order']) if row['shutdown_order'] else 100
+                    host=host,
+                    port=int(port) if port and port.isdigit() else None,
+                    webui_url=webui_url,
+                    db_host=db_host,
+                    shutdown_order=int(shutdown_order) if shutdown_order and shutdown_order.isdigit() else 100
                 )
                 db.session.add(app)
                 db.session.flush()
                 
                 # Handle dependencies
-                if row.get('dependencies'):
-                    for dep_name in row['dependencies'].split(';'):
-                        if dep_name.strip():
-                            dep_app = Application.query.filter_by(name=dep_name.strip()).first()
+                if dependencies:
+                    for dep_name in dependencies.split(';'):
+                        dep_name = clean_csv_value(dep_name)
+                        if dep_name:
+                            dep_app = Application.query.filter_by(name=dep_name).first()
                             if dep_app:
                                 dependency = ApplicationDependency(
                                     application_id=app.id,
@@ -229,10 +281,10 @@ def import_apps():
                 imported += 1
                 
             except Exception as e:
-                errors.append(f"Error importing {row.get('name', 'unknown')}: {str(e)}")
+                errors.append(f"Error importing {row.get(column_mapping['name'], 'unknown')}: {str(e)}")
         
-        # Commit transaction if no errors
-        if not errors:
+        # Commit transaction if we have successful imports and no errors
+        if imported > 0 and not errors:
             db.session.commit()
             return jsonify({
                 'message': f'Successfully imported {imported} applications ({skipped} skipped)',
