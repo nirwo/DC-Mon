@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, jsonify
 from app.models import db, Team, Application, ApplicationDependency
-from app.utils import get_application_status, get_shutdown_sequence
+from app.utils import get_application_status, get_shutdown_sequence, check_application_status
 import csv
 from io import StringIO
 from datetime import datetime
@@ -182,15 +182,15 @@ def import_csv():
 @main.route('/check_status/<int:app_id>')
 def check_status(app_id):
     app = Application.query.get_or_404(app_id)
-    status = get_application_status(app)
-    
-    app.status = 'running' if status['is_running'] else 'stopped'
-    app.last_checked = status['last_checked']
+    status, details = check_application_status(app)
+    app.last_checked = datetime.utcnow()
     db.session.commit()
     
     return jsonify({
-        'status': app.status,
-        'details': status['details'],
+        'id': app.id,
+        'name': app.name,
+        'status': status,
+        'details': details,
         'last_checked': app.last_checked.isoformat()
     })
 
@@ -200,13 +200,13 @@ def check_all_status():
     results = {}
     
     for app in apps:
-        status = get_application_status(app)
-        app.status = 'running' if status['is_running'] else 'stopped'
-        app.last_checked = status['last_checked']
+        status, details = check_application_status(app)
+        app.last_checked = datetime.utcnow()
+        
         results[app.id] = {
             'name': app.name,
-            'status': app.status,
-            'details': status['details'],
+            'status': status,
+            'details': details,
             'last_checked': app.last_checked.isoformat()
         }
     
