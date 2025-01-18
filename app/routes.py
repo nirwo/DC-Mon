@@ -269,9 +269,10 @@ def import_apps():
         skipped = 0
         errors = []
         
-        # Create a dictionary to store teams and applications to minimize database queries
+        # Create dictionaries to store teams and applications to minimize database queries
         teams_cache = {}
         apps_cache = {}
+        pending_dependencies = []
         
         # Process all rows
         for row in reader:
@@ -349,26 +350,26 @@ def import_apps():
                 if dependencies:
                     for dep_name in dependencies.split(';'):
                         if dep_name := clean_csv_value(dep_name):
-                            if dep_app := Application.query.filter_by(name=dep_name).first():
-                                # Check if dependency already exists
-                                if not ApplicationDependency.query.filter_by(
-                                    application_id=app.id,
-                                    dependency_id=dep_app.id
-                                ).first():
-                                    dependency = ApplicationDependency(
-                                        application_id=app.id,
-                                        dependency_id=dep_app.id,
-                                        dependency_type='shutdown_before'
-                                    )
-                                    db.session.add(dependency)
-                
-                # Commit every 100 records to avoid large transactions
-                if (imported + updated + skipped) % 100 == 0:
-                    db.session.commit()
+                            # Add to pending dependencies to process after all apps are created
+                            pending_dependencies.append((app.id, dep_name))
                 
             except Exception as e:
                 errors.append(f"Error processing row {name}: {str(e)}")
                 continue
+        
+        # Process dependencies after all applications are created
+        for app_id, dep_name in pending_dependencies:
+            if dep_app := Application.query.filter_by(name=dep_name).first():
+                if not ApplicationDependency.query.filter_by(
+                    application_id=app_id,
+                    dependency_id=dep_app.id
+                ).first():
+                    dependency = ApplicationDependency(
+                        application_id=app_id,
+                        dependency_id=dep_app.id,
+                        dependency_type='shutdown_before'
+                    )
+                    db.session.add(dependency)
         
         # Final commit
         db.session.commit()
