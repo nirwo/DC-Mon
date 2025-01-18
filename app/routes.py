@@ -66,6 +66,66 @@ def add_application():
         db.session.rollback()
         return jsonify({'error': str(e)}), 400
 
+@main.route('/api/teams/<int:team_id>', methods=['PUT'])
+def update_team(team_id):
+    team = Team.query.get_or_404(team_id)
+    data = request.json
+    
+    if 'name' not in data:
+        return jsonify({'error': 'Name is required'}), 400
+        
+    # Check if another team with this name exists
+    existing_team = Team.query.filter(Team.name == data['name'], Team.id != team_id).first()
+    if existing_team:
+        return jsonify({'error': 'Team name already exists'}), 400
+        
+    team.name = data['name']
+    db.session.commit()
+    return jsonify({'message': 'Team updated successfully'})
+
+@main.route('/api/applications/<int:app_id>', methods=['GET'])
+def get_application(app_id):
+    app = Application.query.get_or_404(app_id)
+    return jsonify({
+        'id': app.id,
+        'name': app.name,
+        'team_id': app.team_id,
+        'host': app.host,
+        'port': app.port,
+        'webui_url': app.webui_url,
+        'db_host': app.db_host,
+        'shutdown_order': app.shutdown_order
+    })
+
+@main.route('/api/applications/<int:app_id>', methods=['PUT'])
+def update_application(app_id):
+    app = Application.query.get_or_404(app_id)
+    data = request.json
+    
+    if not all(key in data for key in ['name', 'team_id', 'host', 'port', 'shutdown_order']):
+        return jsonify({'error': 'Missing required fields'}), 400
+        
+    # Check if another application with this name exists
+    existing_app = Application.query.filter(Application.name == data['name'], Application.id != app_id).first()
+    if existing_app:
+        return jsonify({'error': 'Application name already exists'}), 400
+        
+    # Validate team exists
+    team = Team.query.get(data['team_id'])
+    if not team:
+        return jsonify({'error': 'Team not found'}), 404
+        
+    app.name = data['name']
+    app.team_id = data['team_id']
+    app.host = data['host']
+    app.port = data['port']
+    app.webui_url = data.get('webui_url', '')
+    app.db_host = data.get('db_host', '')
+    app.shutdown_order = data['shutdown_order']
+    
+    db.session.commit()
+    return jsonify({'message': 'Application updated successfully'})
+
 @main.route('/import_csv', methods=['POST'])
 def import_csv():
     if 'file' not in request.files:
