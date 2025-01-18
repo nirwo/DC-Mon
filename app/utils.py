@@ -71,21 +71,27 @@ def check_webui_status(url):
     is_running = True
     
     try:
-        response = requests.get(url, timeout=5, verify=False)
-        if response.status_code >= 400:
-            details.append(f"WebUI returned error status {response.status_code}")
-            is_running = False
-    except requests.exceptions.SSLError:
-        # Try without HTTPS if SSL fails
-        http_url = url.replace('https://', 'http://')
-        try:
-            response = requests.get(http_url, timeout=5)
-            if response.status_code >= 400:
-                details.append(f"WebUI returned error status {response.status_code}")
+        # Create a new session for HTTPS with proper verification
+        with requests.Session() as session:
+            try:
+                response = session.get(url, timeout=5)
+                if response.status_code >= 400:
+                    details.append(f"WebUI returned error status {response.status_code}")
+                    is_running = False
+            except requests.exceptions.SSLError:
+                # If HTTPS fails, try HTTP with a new session
+                http_url = url.replace('https://', 'http://')
+                try:
+                    response = requests.get(http_url, timeout=5)
+                    if response.status_code >= 400:
+                        details.append(f"WebUI returned error status {response.status_code}")
+                        is_running = False
+                except Exception as e:
+                    details.append(f"WebUI is not accessible: {str(e)}")
+                    is_running = False
+            except Exception as e:
+                details.append(f"WebUI is not accessible: {str(e)}")
                 is_running = False
-        except Exception as e:
-            details.append(f"WebUI is not accessible: {str(e)}")
-            is_running = False
     except Exception as e:
         details.append(f"WebUI is not accessible: {str(e)}")
         is_running = False
