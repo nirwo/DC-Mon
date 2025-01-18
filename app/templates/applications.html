@@ -42,39 +42,31 @@
                             <tr id="app-row-{{ app.id }}">
                                 <td>{{ app.name }}</td>
                                 <td>{{ app.team.name }}</td>
-                                <td>{{ app.host }}:{{ app.port }}</td>
-                                <td>
-                                    {% if app.webui_url %}
-                                    <a href="{{ app.webui_url }}" target="_blank">{{ app.webui_url }}</a>
-                                    {% else %}
-                                    -
-                                    {% endif %}
-                                </td>
-                                <td>{{ app.db_host or '-' }}</td>
+                                <td>{{ app.host }}{% if app.port %}:{{ app.port }}{% endif %}</td>
+                                <td>{% if app.webui_url %}<a href="{{ app.webui_url }}" target="_blank">{{ app.webui_url }}</a>{% endif %}</td>
+                                <td>{{ app.db_host }}</td>
                                 <td>{{ app.shutdown_order }}</td>
-                                <td>
-                                    <span class="badge bg-secondary">Unknown</span>
-                                </td>
+                                <td><span class="badge bg-secondary">Unknown</span></td>
                                 <td>
                                     <div class="btn-group">
-                                        <button class="btn btn-sm btn-primary" onclick="editApplication({{ app.id }})">
+                                        <button class="btn btn-sm btn-outline-primary" onclick="editApplication({{ app.id }})">
                                             <i class="bi bi-pencil"></i>
                                         </button>
-                                        <button class="btn btn-sm btn-info" onclick="checkStatus({{ app.id }})">
-                                            <i class="bi bi-arrow-repeat"></i>
+                                        <button class="btn btn-sm btn-outline-info" onclick="checkStatus({{ app.id }})">
+                                            <i class="bi bi-arrow-clockwise"></i>
                                         </button>
-                                        <button class="btn btn-sm btn-secondary" onclick="viewShutdownSequence({{ app.id }})">
-                                            <i class="bi bi-list-ol"></i>
-                                        </button>
-                                        <button class="btn btn-sm btn-danger" onclick="confirmShutdown({{ app.id }})">
+                                        <button class="btn btn-sm btn-outline-danger" onclick="confirmShutdown({{ app.id }})">
                                             <i class="bi bi-power"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-secondary" onclick="viewShutdownSequence({{ app.id }})">
+                                            <i class="bi bi-list-ol"></i>
                                         </button>
                                     </div>
                                 </td>
                             </tr>
                             <tr id="app-details-{{ app.id }}" class="d-none">
                                 <td colspan="8">
-                                    <div class="details p-2"></div>
+                                    <div class="details ps-4 py-2"></div>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -249,6 +241,8 @@ function updateAppStatus(appId, status, details) {
     if (details && details.length > 0) {
         detailsDiv.innerHTML = details.map(detail => `<small class="text-muted d-block">${detail}</small>`).join('');
         detailsRow.classList.remove('d-none');
+    } else {
+        detailsRow.classList.add('d-none');
     }
 }
 
@@ -259,7 +253,13 @@ function checkStatus(appId) {
             updateAppStatus(appId, data.status, data.details);
             updateLastChecked();
         })
-        .catch(error => console.error('Error:', error));
+        .catch(error => {
+            console.error('Error:', error);
+            const row = document.getElementById(`app-row-${appId}`);
+            const statusBadge = row.querySelector('.badge');
+            statusBadge.className = 'badge bg-warning';
+            statusBadge.textContent = 'Error';
+        });
 }
 
 function checkAllStatus() {
@@ -271,7 +271,10 @@ function checkAllStatus() {
             });
             updateLastChecked();
         })
-        .catch(error => console.error('Error:', error));
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error checking application statuses');
+        });
 }
 
 function viewShutdownSequence(appId) {
@@ -296,7 +299,10 @@ function viewShutdownSequence(appId) {
             document.getElementById('shutdownSequence').innerHTML = sequenceHtml;
             new bootstrap.Modal(document.getElementById('shutdownSequenceModal')).show();
         })
-        .catch(error => console.error('Error:', error));
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error retrieving shutdown sequence');
+        });
 }
 
 function confirmShutdown(appId) {
@@ -311,7 +317,10 @@ function confirmShutdown(appId) {
             `;
             new bootstrap.Modal(document.getElementById('confirmShutdownModal')).show();
         })
-        .catch(error => console.error('Error:', error));
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error retrieving shutdown sequence');
+        });
 }
 
 function executeShutdown() {
@@ -323,11 +332,13 @@ function executeShutdown() {
             if (data.error) {
                 alert('Error: ' + data.error);
             } else {
-                location.reload();
+                checkAllStatus();
+                new bootstrap.Modal(document.getElementById('confirmShutdownModal')).hide();
             }
         })
         .catch(error => {
-            alert('Error: ' + error);
+            console.error('Error:', error);
+            alert('Error executing shutdown sequence');
         });
 }
 
