@@ -1,35 +1,40 @@
+import os
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from config import Config, ProductionConfig, DevelopmentConfig
 
 db = SQLAlchemy()
 migrate = Migrate()
 
-def create_app():
+def create_app(config_name='development'):
     app = Flask(__name__)
-    app.config['SECRET_KEY'] = 'dev'
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///shutdown_manager.db'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
-    # Basic SQLAlchemy settings
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_pre_ping': True,
-        'pool_recycle': 300,
-    }
+    # Configure the app
+    if config_name == 'production':
+        app.config.from_object(ProductionConfig)
+    else:
+        app.config.from_object(DevelopmentConfig)
     
-    # SQLite optimizations
-    app.config['SQLALCHEMY_ENGINE_OPTIONS']['connect_args'] = {
-        'timeout': 60,
-        'check_same_thread': False
-    }
-    
+    # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
     
-    with app.app_context():
-        db.create_all()  # Create database tables
-        
-        from .routes import main
-        app.register_blueprint(main)
-        
+    # Configure logging for production
+    if not app.debug and not app.testing:
+        if app.config['LOG_TO_STDOUT']:
+            import logging
+            from logging import StreamHandler
+            stream_handler = StreamHandler()
+            stream_handler.setLevel(logging.INFO)
+            app.logger.addHandler(stream_handler)
+            app.logger.setLevel(logging.INFO)
+            app.logger.info('Shutdown Manager startup')
+    
+    # Register blueprints
+    from .routes import main
+    app.register_blueprint(main)
+    
     return app
+
+from app import models
