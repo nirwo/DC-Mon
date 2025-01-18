@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1>System Dashboard</h1>
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <button class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#importModal">
+                    <i class="bi bi-upload"></i> Import CSV
+                </button>
+                <button class="btn btn-info me-2" onclick="checkAllStatus()">
+                    <i class="bi bi-arrow-repeat"></i> Check All Status
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Teams Overview</h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group">
+                    {% for team in teams %}
+                    <div class="list-group-item">
+                        <h6 class="mb-1">{{ team.name }}</h6>
+                        <small>{{ team.applications|length }} applications</small>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Applications Status</h5>
+                <small class="text-muted" id="lastUpdateTime"></small>
+            </div>
+            <div class="card-body">
+                <div class="list-group" id="applicationsList">
+                    {% for app in applications %}
+                    <div class="list-group-item" id="app-{{ app.id }}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">{{ app.name }}</h6>
+                                <small>Team: {{ app.team.name }}</small>
+                            </div>
+                            <div class="d-flex align-items-center">
+                                <button class="btn btn-sm btn-outline-info me-2" onclick="checkStatus({{ app.id }})">
+                                    <i class="bi bi-arrow-repeat"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary me-2" onclick="viewShutdownSequence({{ app.id }})">
+                                    <i class="bi bi-list-ol"></i>
+                                </button>
+                                <span class="badge bg-{{ 'success' if app.status == 'running' else 'danger' }}">
+                                    {{ app.status }}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="details mt-2 d-none"></div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Import CSV</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="importForm">
+                    <div class="mb-3">
+                        <label for="csvFile" class="form-label">Select CSV File</label>
+                        <input type="file" class="form-control" id="csvFile" accept=".csv" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="importCSV()">Import</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Shutdown Sequence Modal -->
+<div class="modal fade" id="shutdownSequenceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Shutdown Sequence</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="list-group" id="shutdownSequence"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function importCSV() {
+    const fileInput = document.getElementById('csvFile');
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    fetch('/import_csv', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            alert('Import successful');
+            location.reload();
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function updateLastChecked() {
+    const now = new Date();
+    document.getElementById('lastUpdateTime').textContent = 
+        `Last updated: ${now.toLocaleTimeString()}`;
+}
+
+function updateAppStatus(appId, status, details) {
+    const appElement = document.getElementById(`app-${appId}`);
+    const statusBadge = appElement.querySelector('.badge');
+    const detailsDiv = appElement.querySelector('.details');
+    
+    statusBadge.className = `badge bg-${status === 'running' ? 'success' : 'danger'}`;
+    statusBadge.textContent = status;
+    
+    if (details && details.length > 0) {
+        detailsDiv.innerHTML = details.map(detail => `<small class="text-muted d-block">${detail}</small>`).join('');
+        detailsDiv.classList.remove('d-none');
+    }
+}
+
+function checkStatus(appId) {
+    fetch(`/check_status/${appId}`)
+        .then(response => response.json())
+        .then(data => {
+            updateAppStatus(appId, data.status, data.details);
+            updateLastChecked();
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+function checkAllStatus() {
+    fetch('/check_all_status')
+        .then(response => response.json())
+        .then(data => {
+            Object.entries(data).forEach(([appId, appData]) => {
+                updateAppStatus(appId, appData.status, appData.details);
+            });
+            updateLastChecked();
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+function viewShutdownSequence(appId) {
+    fetch(`/shutdown_sequence/${appId}`)
+        .then(response => response.json())
+        .then(data => {
+            const sequenceHtml = data.sequence.map((app, index) => `
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-secondary me-2">${index + 1}</span>
+                            <strong>${app.name}</strong>
+                            <small class="text-muted">(${app.team})</small>
+                        </div>
+                        <span class="badge bg-${app.status === 'running' ? 'success' : 'danger'}">
+                            ${app.status}
+                        </span>
+                    </div>
+                </div>
+            `).join('');
+            
+            document.getElementById('shutdownSequence').innerHTML = sequenceHtml;
+            new bootstrap.Modal(document.getElementById('shutdownSequenceModal')).show();
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+// Check all status every 30 seconds
+setInterval(checkAllStatus, 30000);
+
+// Initial status check
+checkAllStatus();
+</script>
+{% endblock %}

@@ -1,0 +1,11 @@
+team_name,app_name,host,port,webui_url,db_host,shutdown_order,dependencies
+Frontend Team,Customer Portal,web1.internal,8080,http://web1.internal:8080,,100,
+Frontend Team,Admin Dashboard,web2.internal,8081,http://web2.internal:8081,,90,
+API Team,Authentication Service,auth.internal,9000,http://auth.internal:9000,db1.internal:5432,80,
+API Team,User Service,user.internal,9001,http://user.internal:9001,db1.internal:5432,70,auth.internal:9000
+API Team,Order Service,order.internal,9002,http://order.internal:9002,db2.internal:5432,60,auth.internal:9000;user.internal:9001
+Database Team,User Database,db1.internal,5432,,db1.internal:5432,20,
+Database Team,Order Database,db2.internal,5432,,db2.internal:5432,10,
+Monitoring Team,Prometheus,monitor1.internal,9090,http://monitor1.internal:9090,tsdb.internal:5432,95,
+Monitoring Team,Grafana,monitor2.internal,3000,http://monitor2.internal:3000,tsdb.internal:5432,85,
+Monitoring Team,Time Series DB,tsdb.internal,5432,,tsdb.internal:5432,15,

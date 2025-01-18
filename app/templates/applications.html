@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+
+{% block title %}Applications{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>Applications</h1>
+            <div>
+                <button class="btn btn-info me-2" onclick="checkAllStatus()">
+                    <i class="bi bi-arrow-repeat"></i> Check All Status
+                </button>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addApplicationModal">
+                    <i class="bi bi-plus-circle"></i> Add Application
+                </button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Applications List</h5>
+                <small class="text-muted" id="lastUpdateTime"></small>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Team</th>
+                                <th>Host:Port</th>
+                                <th>WebUI</th>
+                                <th>Database</th>
+                                <th>Shutdown Order</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for app in applications %}
+                            <tr id="app-row-{{ app.id }}">
+                                <td>{{ app.name }}</td>
+                                <td>{{ app.team.name }}</td>
+                                <td>{{ app.host }}:{{ app.port }}</td>
+                                <td>
+                                    {% if app.webui_url %}
+                                    <a href="{{ app.webui_url }}" target="_blank">Open</a>
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </td>
+                                <td>{{ app.db_host or '-' }}</td>
+                                <td>{{ app.shutdown_order }}</td>
+                                <td>
+                                    <span class="badge bg-{{ 'success' if app.status == 'running' else 'danger' }}">
+                                        {{ app.status }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-info me-1" onclick="checkStatus({{ app.id }})">
+                                        <i class="bi bi-arrow-repeat"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary me-1" onclick="viewShutdownSequence({{ app.id }})">
+                                        <i class="bi bi-list-ol"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="confirmShutdown({{ app.id }})">
+                                        <i class="bi bi-power"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            <tr id="app-details-{{ app.id }}" class="d-none">
+                                <td colspan="8">
+                                    <div class="details p-2"></div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Application Modal -->
+<div class="modal fade" id="addApplicationModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Application</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addApplicationForm">
+                    <div class="mb-3">
+                        <label for="appName" class="form-label">Application Name</label>
+                        <input type="text" class="form-control" id="appName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="teamSelect" class="form-label">Team</label>
+                        <select class="form-control" id="teamSelect" required>
+                            {% for team in teams %}
+                            <option value="{{ team.id }}">{{ team.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="appHost" class="form-label">Host</label>
+                        <input type="text" class="form-control" id="appHost" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="appPort" class="form-label">Port</label>
+                        <input type="number" class="form-control" id="appPort" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="appWebUI" class="form-label">WebUI URL (optional)</label>
+                        <input type="url" class="form-control" id="appWebUI">
+                    </div>
+                    <div class="mb-3">
+                        <label for="appDB" class="form-label">Database Host (optional)</label>
+                        <input type="text" class="form-control" id="appDB">
+                    </div>
+                    <div class="mb-3">
+                        <label for="shutdownOrder" class="form-label">Shutdown Order</label>
+                        <input type="number" class="form-control" id="shutdownOrder" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="addApplication()">Add Application</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Shutdown Sequence Modal -->
+<div class="modal fade" id="shutdownSequenceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Shutdown Sequence</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="list-group" id="shutdownSequence"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Confirm Shutdown Modal -->
+<div class="modal fade" id="confirmShutdownModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Shutdown</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to shut down this application and its dependencies?</p>
+                <div id="shutdownWarning" class="alert alert-warning"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" onclick="executeShutdown()">Shutdown</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let selectedAppId = null;
+
+function updateLastChecked() {
+    const now = new Date();
+    document.getElementById('lastUpdateTime').textContent = 
+        `Last updated: ${now.toLocaleTimeString()}`;
+}
+
+function updateAppStatus(appId, status, details) {
+    const row = document.getElementById(`app-row-${appId}`);
+    const detailsRow = document.getElementById(`app-details-${appId}`);
+    const statusBadge = row.querySelector('.badge');
+    const detailsDiv = detailsRow.querySelector('.details');
+    
+    statusBadge.className = `badge bg-${status === 'running' ? 'success' : 'danger'}`;
+    statusBadge.textContent = status;
+    
+    if (details && details.length > 0) {
+        detailsDiv.innerHTML = details.map(detail => `<small class="text-muted d-block">${detail}</small>`).join('');
+        detailsRow.classList.remove('d-none');
+    }
+}
+
+function checkStatus(appId) {
+    fetch(`/check_status/${appId}`)
+        .then(response => response.json())
+        .then(data => {
+            updateAppStatus(appId, data.status, data.details);
+            updateLastChecked();
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+function checkAllStatus() {
+    fetch('/check_all_status')
+        .then(response => response.json())
+        .then(data => {
+            Object.entries(data).forEach(([appId, appData]) => {
+                updateAppStatus(appId, appData.status, appData.details);
+            });
+            updateLastChecked();
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+function viewShutdownSequence(appId) {
+    fetch(`/shutdown_sequence/${appId}`)
+        .then(response => response.json())
+        .then(data => {
+            const sequenceHtml = data.sequence.map((app, index) => `
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-secondary me-2">${index + 1}</span>
+                            <strong>${app.name}</strong>
+                            <small class="text-muted">(${app.team})</small>
+                        </div>
+                        <span class="badge bg-${app.status === 'running' ? 'success' : 'danger'}">
+                            ${app.status}
+                        </span>
+                    </div>
+                </div>
+            `).join('');
+            
+            document.getElementById('shutdownSequence').innerHTML = sequenceHtml;
+            new bootstrap.Modal(document.getElementById('shutdownSequenceModal')).show();
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+function confirmShutdown(appId) {
+    selectedAppId = appId;
+    fetch(`/shutdown_sequence/${appId}`)
+        .then(response => response.json())
+        .then(data => {
+            const warning = document.getElementById('shutdownWarning');
+            warning.innerHTML = `
+                <strong>The following applications will be shut down:</strong><br>
+                ${data.sequence.map(app => `${app.name} (${app.team})`).join('<br>')}
+            `;
+            new bootstrap.Modal(document.getElementById('confirmShutdownModal')).show();
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+function executeShutdown() {
+    if (!selectedAppId) return;
+    
+    fetch(`/shutdown/${selectedAppId}`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert('Error: ' + data.error);
+            } else {
+                location.reload();
+            }
+        })
+        .catch(error => {
+            alert('Error: ' + error);
+        });
+}
+
+function addApplication() {
+    const data = {
+        name: document.getElementById('appName').value,
+        team_id: document.getElementById('teamSelect').value,
+        host: document.getElementById('appHost').value,
+        port: document.getElementById('appPort').value,
+        webui_url: document.getElementById('appWebUI').value,
+        db_host: document.getElementById('appDB').value,
+        shutdown_order: document.getElementById('shutdownOrder').value
+    };
+    
+    fetch('/api/applications', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            location.reload();
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+// Check all status every 30 seconds
+setInterval(checkAllStatus, 30000);
+
+// Initial status check
+checkAllStatus();
+</script>
+{% endblock %}
