@@ -1,323 +1,110 @@
 {% extends "base.html" %}
 
-{% block title %}Applications{% endblock %}
-
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <div class="d-flex justify-content-between mb-3">
-            <h2>Applications</h2>
-            <div class="btn-group">
-                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal">
-                    <i class="bi bi-upload"></i> Import
-                </button>
-                <a href="/export_template" class="btn btn-outline-primary">
-                    <i class="bi bi-download"></i> Template
-                </a>
-                <button class="btn btn-danger" onclick="confirmBulkDelete()" id="bulkDeleteBtn" disabled>
-                    <i class="bi bi-trash"></i> Delete Selected
-                </button>
-            </div>
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Applications</h2>
+        <div>
+            <button class="btn btn-primary" onclick="showImportModal()">
+                <i class="bi bi-upload me-1"></i> Import
+            </button>
         </div>
+    </div>
 
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">Applications List</h5>
-                <small class="text-muted" id="lastUpdateTime"></small>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>
-                                    <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
-                                </th>
-                                <th>Name</th>
-                                <th>Team</th>
-                                <th>Host:Port</th>
-                                <th>WebUI</th>
-                                <th>Database</th>
-                                <th>Shutdown Order</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for app in applications %}
-                            <tr id="app-row-{{ app.id }}">
-                                <td>
-                                    <input type="checkbox" class="app-select" value="{{ app.id }}" onchange="updateBulkDeleteButton()">
-                                </td>
-                                <td>{{ app.name }}</td>
-                                <td>{{ app.team.name }}</td>
-                                <td>
-                                    {% for instance in app.instances %}
-                                    <div class="instance-row">
-                                        {{ instance.host }}{% if instance.port %}:{{ instance.port }}{% endif %}
-                                        {% if instance.webui_url %}
-                                        <a href="{{ instance.webui_url }}" target="_blank" class="btn btn-sm btn-link">
-                                            <i class="bi bi-box-arrow-up-right"></i>
-                                        </a>
-                                        {% endif %}
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Team</th>
+                            <th>Instances</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for app in applications %}
+                        <tr>
+                            <td>{{ app.name }}</td>
+                            <td>{{ app.team.name }}</td>
+                            <td>
+                                {% for instance in app.instances %}
+                                <div class="instance-row">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>Host:</strong> {{ instance.host }}
+                                            {% if instance.port %}
+                                            <span class="text-muted">:{{ instance.port }}</span>
+                                            {% endif %}
+                                        </div>
+                                        <div>
+                                            {% if instance.status == 'running' %}
+                                            <span class="badge bg-success">Running</span>
+                                            {% elif instance.status == 'stopped' %}
+                                            <span class="badge bg-danger">Stopped</span>
+                                            {% else %}
+                                            <span class="badge bg-secondary">Unknown</span>
+                                            {% endif %}
+                                        </div>
                                     </div>
-                                    {% endfor %}
-                                </td>
-                                <td>
-                                    {% for instance in app.instances %}
-                                    <div class="instance-row">
-                                        {{ instance.db_host if instance.db_host else 'N/A' }}
+                                    {% if instance.webui_url %}
+                                    <div class="text-muted small">
+                                        <strong>WebUI:</strong> 
+                                        <a href="{{ instance.webui_url }}" target="_blank">{{ instance.webui_url }}</a>
                                     </div>
-                                    {% endfor %}
-                                </td>
-                                <td>{{ app.shutdown_order }}</td>
-                                <td>
-                                    {% for instance in app.instances %}
-                                    <div class="instance-row">
-                                        <span class="badge {% if instance.is_running %}bg-success{% else %}bg-danger{% endif %}">
-                                            {{ 'Running' if instance.is_running else 'Stopped' }}
-                                        </span>
-                                        {% if instance.status_details %}
-                                        <small class="text-muted">{{ instance.status_details }}</small>
-                                        {% endif %}
+                                    {% endif %}
+                                    {% if instance.db_host %}
+                                    <div class="text-muted small">
+                                        <strong>DB:</strong> {{ instance.db_host }}
                                     </div>
-                                    {% endfor %}
-                                </td>
-                                <td>
-                                    <div class="btn-group">
-                                        <button class="btn btn-sm btn-outline-primary" 
-                                                onclick="editApplication({{ app.id }})"
-                                                data-bs-toggle="tooltip" 
-                                                data-bs-placement="top" 
-                                                title="Edit Application">
-                                            <i class="bi bi-pencil"></i>
-                                        </button>
-                                        <button class="btn btn-sm btn-outline-info" 
-                                                onclick="checkStatus({{ app.id }})"
-                                                data-bs-toggle="tooltip" 
-                                                data-bs-placement="top" 
-                                                title="Check Status">
-                                            <i class="bi bi-arrow-clockwise"></i>
-                                        </button>
-                                        <button class="btn btn-sm btn-outline-danger" 
-                                                onclick="confirmShutdown({{ app.id }})"
-                                                data-bs-toggle="tooltip" 
-                                                data-bs-placement="top" 
-                                                title="Shutdown Application">
-                                            <i class="bi bi-power"></i>
-                                        </button>
-                                        <button class="btn btn-sm btn-outline-secondary" 
-                                                onclick="viewShutdownSequence({{ app.id }})"
-                                                data-bs-toggle="tooltip" 
-                                                data-bs-placement="top" 
-                                                title="View Shutdown Sequence">
-                                            <i class="bi bi-list-ol"></i>
-                                        </button>
-                                        <button class="btn btn-sm btn-outline-danger" 
-                                                onclick="confirmDeleteApplication({{ app.id }}, '{{ app.name }}')"
-                                                data-bs-toggle="tooltip" 
-                                                data-bs-placement="top" 
-                                                title="Delete Application">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                            <tr id="app-details-{{ app.id }}" class="d-none">
-                                <td colspan="8">
-                                    <div class="details ps-4 py-2"></div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Add Application Modal -->
-<div class="modal fade" id="addApplicationModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Add New Application</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <form id="addApplicationForm">
-                    <div class="mb-3">
-                        <label for="appName" class="form-label">Application Name</label>
-                        <input type="text" class="form-control" id="appName" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="teamSelect" class="form-label">Team</label>
-                        <select class="form-control" id="teamSelect" required>
-                            {% for team in teams %}
-                            <option value="{{ team.id }}">{{ team.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label for="appHost" class="form-label">Host</label>
-                        <input type="text" class="form-control" id="appHost" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="appPort" class="form-label">Port</label>
-                        <input type="number" class="form-control" id="appPort" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="appWebUI" class="form-label">WebUI URL (optional)</label>
-                        <input type="url" class="form-control" id="appWebUI">
-                    </div>
-                    <div class="mb-3">
-                        <label for="appDB" class="form-label">Database Host (optional)</label>
-                        <input type="text" class="form-control" id="appDB">
-                    </div>
-                    <div class="mb-3">
-                        <label for="shutdownOrder" class="form-label">Shutdown Order</label>
-                        <input type="number" class="form-control" id="shutdownOrder" required>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="addApplication()">Add Application</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Edit Application Modal -->
-<div class="modal fade" id="editApplicationModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Edit Application</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <form id="editApplicationForm">
-                    <input type="hidden" id="editAppId">
-                    <div class="mb-3">
-                        <label for="editAppName" class="form-label">Application Name</label>
-                        <input type="text" class="form-control" id="editAppName" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="editTeamSelect" class="form-label">Team</label>
-                        <select class="form-control" id="editTeamSelect" required>
-                            {% for team in teams %}
-                            <option value="{{ team.id }}">{{ team.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label for="editAppHost" class="form-label">Host</label>
-                        <input type="text" class="form-control" id="editAppHost" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="editAppPort" class="form-label">Port</label>
-                        <input type="number" class="form-control" id="editAppPort" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="editAppWebUI" class="form-label">WebUI URL (optional)</label>
-                        <input type="url" class="form-control" id="editAppWebUI">
-                    </div>
-                    <div class="mb-3">
-                        <label for="editAppDB" class="form-label">Database Host (optional)</label>
-                        <input type="text" class="form-control" id="editAppDB">
-                    </div>
-                    <div class="mb-3">
-                        <label for="editShutdownOrder" class="form-label">Shutdown Order</label>
-                        <input type="number" class="form-control" id="editShutdownOrder" required>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="updateApplication()">Update Application</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Shutdown Sequence Modal -->
-<div class="modal fade" id="shutdownSequenceModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Shutdown Sequence</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="list-group" id="shutdownSequence"></div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Confirm Shutdown Modal -->
-<div class="modal fade" id="confirmShutdownModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Confirm Shutdown</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p>Are you sure you want to shut down this application and its dependencies?</p>
-                <div id="shutdownWarning" class="alert alert-warning"></div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" onclick="executeShutdown()">Shutdown</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Delete Application Modal -->
-<div class="modal fade" id="deleteApplicationModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Delete Application</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p>Are you sure you want to delete the application "<span id="deleteApplicationName"></span>"?</p>
-                <div class="alert alert-warning">
-                    <i class="bi bi-exclamation-triangle"></i>
-                    This action cannot be undone. All dependencies will be removed.
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" onclick="deleteApplication()">Delete</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Delete Bulk Modal -->
-<div class="modal fade" id="deleteBulkModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Delete Applications</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p>Are you sure you want to delete <span id="deleteCount">0</span> applications?</p>
-                <div class="alert alert-warning">
-                    <i class="bi bi-exclamation-triangle"></i>
-                    This action cannot be undone. All dependencies will be removed.
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" onclick="bulkDeleteApplications()">Delete</button>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            </td>
+                            <td>
+                                <div class="btn-group">
+                                    <button class="btn btn-sm btn-outline-primary" 
+                                            onclick="editApplication({{ app.id }})"
+                                            data-bs-toggle="tooltip" 
+                                            data-bs-placement="top" 
+                                            title="Edit Application">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-info" 
+                                            onclick="checkStatus({{ app.id }})"
+                                            data-bs-toggle="tooltip" 
+                                            data-bs-placement="top" 
+                                            title="Check Status">
+                                        <i class="bi bi-arrow-clockwise"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" 
+                                            onclick="confirmShutdown({{ app.id }})"
+                                            data-bs-toggle="tooltip" 
+                                            data-bs-placement="top" 
+                                            title="Shutdown Application">
+                                        <i class="bi bi-power"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary" 
+                                            onclick="viewShutdownSequence({{ app.id }})"
+                                            data-bs-toggle="tooltip" 
+                                            data-bs-placement="top" 
+                                            title="View Shutdown Sequence">
+                                        <i class="bi bi-list-ol"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" 
+                                            onclick="confirmDeleteApplication({{ app.id }}, '{{ app.name }}')"
+                                            data-bs-toggle="tooltip" 
+                                            data-bs-placement="top" 
+                                            title="Delete Application">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -440,6 +227,19 @@
 let currentStep = 1;
 let csvData = null;
 let previewData = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize all tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    });
+});
+
+function showImportModal() {
+    const modal = new bootstrap.Modal(document.getElementById('importModal'));
+    modal.show();
+}
 
 document.getElementById('csvFile').addEventListener('change', function(e) {
     const file = e.target.files[0];
@@ -609,368 +409,42 @@ document.getElementById('importButton').addEventListener('click', async function
         `;
     }
 });
+
+function editApplication(id) {
+    // TODO: Implement edit functionality
+}
+
+function checkStatus(id) {
+    fetch(`/check_status/${id}`)
+        .then(response => response.json())
+        .then(data => {
+            // Refresh the page to show updated status
+            window.location.reload();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Failed to check status');
+        });
+}
+
+function confirmShutdown(id) {
+    // TODO: Implement shutdown functionality
+}
+
+function viewShutdownSequence(id) {
+    // TODO: Implement shutdown sequence view
+}
+
+function confirmDeleteApplication(id, name) {
+    if (confirm(`Are you sure you want to delete ${name}?`)) {
+        // TODO: Implement delete functionality
+    }
+}
 </script>
 
 <style>
 .instance-row {
     padding: 2px 0;
-    border-bottom: 1px solid #eee;
-}
-.instance-row:last-child {
-    border-bottom: none;
 }
 </style>
-{% endblock %}
-
-{% block scripts %}
-<script>
-let selectedAppId = null;
-let deleteApplicationId = null;
-
-function updateLastChecked() {
-    const now = new Date();
-    document.getElementById('lastUpdateTime').textContent = 
-        `Last updated: ${now.toLocaleTimeString()}`;
-}
-
-function updateAppStatus(appId, status, details) {
-    const row = document.getElementById(`app-row-${appId}`);
-    const detailsRow = document.getElementById(`app-details-${appId}`);
-    const statusBadge = row.querySelector('.badge');
-    const detailsDiv = detailsRow.querySelector('.details');
-    
-    statusBadge.className = `badge bg-${status === 'running' ? 'success' : 'danger'}`;
-    statusBadge.textContent = status;
-    
-    if (details && details.length > 0) {
-        detailsDiv.innerHTML = details.map(detail => `<small class="text-muted d-block">${detail}</small>`).join('');
-        detailsRow.classList.remove('d-none');
-    } else {
-        detailsRow.classList.add('d-none');
-    }
-}
-
-function checkStatus(appId) {
-    fetch(`/check_status/${appId}`)
-        .then(response => response.json())
-        .then(data => {
-            updateAppStatus(appId, data.status, data.details);
-            updateLastChecked();
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            const row = document.getElementById(`app-row-${appId}`);
-            const statusBadge = row.querySelector('.badge');
-            statusBadge.className = 'badge bg-warning';
-            statusBadge.textContent = 'Error';
-        });
-}
-
-function checkAllStatus() {
-    fetch('/check_all_status')
-        .then(response => response.json())
-        .then(data => {
-            Object.entries(data).forEach(([appId, appData]) => {
-                updateAppStatus(appId, appData.status, appData.details);
-            });
-            updateLastChecked();
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Error checking application statuses');
-        });
-}
-
-function viewShutdownSequence(appId) {
-    fetch(`/shutdown_sequence/${appId}`)
-        .then(response => response.json())
-        .then(data => {
-            const sequenceHtml = data.sequence.map((app, index) => `
-                <div class="list-group-item">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <span class="badge bg-secondary me-2">${index + 1}</span>
-                            <strong>${app.name}</strong>
-                            <small class="text-muted">(${app.team})</small>
-                        </div>
-                        <span class="badge bg-${app.status === 'running' ? 'success' : 'danger'}">
-                            ${app.status}
-                        </span>
-                    </div>
-                </div>
-            `).join('');
-            
-            document.getElementById('shutdownSequence').innerHTML = sequenceHtml;
-            new bootstrap.Modal(document.getElementById('shutdownSequenceModal')).show();
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Error retrieving shutdown sequence');
-        });
-}
-
-function confirmShutdown(appId) {
-    selectedAppId = appId;
-    fetch(`/shutdown_sequence/${appId}`)
-        .then(response => response.json())
-        .then(data => {
-            const warning = document.getElementById('shutdownWarning');
-            warning.innerHTML = `
-                <strong>The following applications will be shut down:</strong><br>
-                ${data.sequence.map(app => `${app.name} (${app.team})`).join('<br>')}
-            `;
-            new bootstrap.Modal(document.getElementById('confirmShutdownModal')).show();
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Error retrieving shutdown sequence');
-        });
-}
-
-function executeShutdown() {
-    if (!selectedAppId) return;
-    
-    fetch(`/shutdown/${selectedAppId}`, { method: 'POST' })
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                alert('Error: ' + data.error);
-            } else {
-                checkAllStatus();
-                new bootstrap.Modal(document.getElementById('confirmShutdownModal')).hide();
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Error executing shutdown sequence');
-        });
-}
-
-function addApplication() {
-    const data = {
-        name: document.getElementById('appName').value,
-        team_id: document.getElementById('teamSelect').value,
-        host: document.getElementById('appHost').value,
-        port: document.getElementById('appPort').value,
-        webui_url: document.getElementById('appWebUI').value,
-        db_host: document.getElementById('appDB').value,
-        shutdown_order: document.getElementById('shutdownOrder').value
-    };
-    
-    fetch('/api/applications', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            alert('Error: ' + data.error);
-        } else {
-            location.reload();
-        }
-    })
-    .catch(error => {
-        alert('Error: ' + error);
-    });
-}
-
-function editApplication(appId) {
-    fetch(`/api/applications/${appId}`)
-        .then(response => response.json())
-        .then(app => {
-            document.getElementById('editAppId').value = app.id;
-            document.getElementById('editAppName').value = app.name;
-            document.getElementById('editTeamSelect').value = app.team_id;
-            document.getElementById('editAppHost').value = app.host;
-            document.getElementById('editAppPort').value = app.port;
-            document.getElementById('editAppWebUI').value = app.webui_url || '';
-            document.getElementById('editAppDB').value = app.db_host || '';
-            document.getElementById('editShutdownOrder').value = app.shutdown_order;
-            
-            new bootstrap.Modal(document.getElementById('editApplicationModal')).show();
-        })
-        .catch(error => {
-            alert('Error: ' + error);
-        });
-}
-
-function updateApplication() {
-    const appId = document.getElementById('editAppId').value;
-    const data = {
-        name: document.getElementById('editAppName').value,
-        team_id: document.getElementById('editTeamSelect').value,
-        host: document.getElementById('editAppHost').value,
-        port: document.getElementById('editAppPort').value,
-        webui_url: document.getElementById('editAppWebUI').value,
-        db_host: document.getElementById('editAppDB').value,
-        shutdown_order: document.getElementById('editShutdownOrder').value
-    };
-    
-    fetch(`/api/applications/${appId}`, {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            alert('Error: ' + data.error);
-        } else {
-            location.reload();
-        }
-    })
-    .catch(error => {
-        alert('Error: ' + error);
-    });
-}
-
-function confirmDeleteApplication(appId, appName) {
-    deleteApplicationId = appId;
-    document.getElementById('deleteApplicationName').textContent = appName;
-    new bootstrap.Modal(document.getElementById('deleteApplicationModal')).show();
-}
-
-function deleteApplication() {
-    if (!deleteApplicationId) return;
-    
-    fetch(`/api/applications/${deleteApplicationId}`, {
-        method: 'DELETE'
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            alert('Error: ' + data.error);
-        } else {
-            location.reload();
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Error deleting application');
-    })
-    .finally(() => {
-        const modal = bootstrap.Modal.getInstance(document.getElementById('deleteApplicationModal'));
-        if (modal) {
-            modal.hide();
-        }
-    });
-}
-
-function toggleSelectAll() {
-    const selectAll = document.getElementById('selectAll');
-    const checkboxes = document.getElementsByClassName('app-select');
-    Array.from(checkboxes).forEach(checkbox => {
-        checkbox.checked = selectAll.checked;
-    });
-    updateBulkDeleteButton();
-}
-
-function updateBulkDeleteButton() {
-    const checkboxes = document.getElementsByClassName('app-select');
-    const selectedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
-    const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
-    bulkDeleteBtn.disabled = selectedCount === 0;
-}
-
-function confirmBulkDelete() {
-    const checkboxes = document.getElementsByClassName('app-select');
-    const selectedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
-    document.getElementById('deleteCount').textContent = selectedCount;
-    new bootstrap.Modal(document.getElementById('deleteBulkModal')).show();
-}
-
-function bulkDeleteApplications() {
-    const checkboxes = document.getElementsByClassName('app-select');
-    const selectedIds = Array.from(checkboxes)
-        .filter(cb => cb.checked)
-        .map(cb => parseInt(cb.value));
-    
-    fetch('/api/applications/bulk_delete', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ app_ids: selectedIds })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            alert('Error: ' + data.error);
-        } else {
-            location.reload();
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Error deleting applications');
-    })
-    .finally(() => {
-        const modal = bootstrap.Modal.getInstance(document.getElementById('deleteBulkModal'));
-        if (modal) {
-            modal.hide();
-        }
-    });
-}
-
-function importApplications() {
-    const form = document.getElementById('importForm');
-    const formData = new FormData(form);
-    const fileInput = document.getElementById('file');
-    
-    console.log('Selected file:', fileInput.files[0]); // Debug log
-    
-    if (!fileInput.files.length) {
-        alert('Please select a CSV file');
-        return;
-    }
-    
-    fetch('/import_apps', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => {
-        console.log('Response status:', response.status); // Debug log
-        return response.json();
-    })
-    .then(data => {
-        console.log('Response data:', data); // Debug log
-        if (data.error) {
-            alert('Error: ' + data.error + '\n\n' + (data.details || []).join('\n'));
-        } else {
-            alert(data.message);
-            location.reload();
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Error importing applications');
-    })
-    .finally(() => {
-        const modal = bootstrap.Modal.getInstance(document.getElementById('importModal'));
-        if (modal) {
-            modal.hide();
-        }
-        form.reset();
-    });
-}
-
-// Check all status every 30 seconds
-setInterval(checkAllStatus, 30000);
-
-// Initial status check
-checkAllStatus();
-
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize all tooltips
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl)
-    });
-});
-</script>
 {% endblock %}
