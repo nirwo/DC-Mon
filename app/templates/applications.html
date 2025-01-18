@@ -492,7 +492,7 @@ function saveNewApplication() {
     
     console.log('Submitting data:', formData);
     
-    fetch('http://localhost:5002/create_application', {
+    fetch('/create_application', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
