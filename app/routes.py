@@ -241,7 +241,6 @@ def import_apps():
         return jsonify({'error': 'File must be a CSV'}), 400
     
     merge_mode = request.form.get('merge_mode', 'skip')  # skip, merge, or replace
-    batch_size = 100  # Process records in batches
     
     try:
         # Read CSV content
@@ -269,10 +268,10 @@ def import_apps():
         skipped = 0
         errors = []
         
-        # Process all rows and collect data
-        applications_to_process = []
-        dependencies_to_process = []
+        # Create a dictionary to store teams to minimize database queries
+        teams_cache = {}
         
+        # Process all rows
         for row in reader:
             try:
                 # Clean and map values
@@ -292,97 +291,71 @@ def import_apps():
                 shutdown_order = clean_csv_value(row.get(column_mapping.get('shutdown_order')))
                 dependencies = clean_csv_value(row.get(column_mapping.get('dependencies')))
                 
-                applications_to_process.append({
-                    'name': name,
-                    'team_name': team_name,
-                    'host': host,
-                    'port': port,
-                    'webui_url': webui_url,
-                    'db_host': db_host,
-                    'shutdown_order': shutdown_order,
-                    'dependencies': dependencies.split(';') if dependencies else []
-                })
+                # Get or create team using cache
+                if team_name not in teams_cache:
+                    team = Team.query.filter_by(name=team_name).first()
+                    if not team:
+                        team = Team(name=team_name)
+                        db.session.add(team)
+                        db.session.flush()
+                    teams_cache[team_name] = team
+                team = teams_cache[team_name]
+                
+                # Check if application exists
+                app = Application.query.filter_by(name=name).first()
+                
+                if app and merge_mode == 'skip':
+                    skipped += 1
+                    continue
+                
+                if app and merge_mode == 'merge':
+                    # Update existing application
+                    app.team_id = team.id
+                    app.host = host
+                    if port and port.isdigit():
+                        app.port = int(port)
+                    if webui_url:
+                        app.webui_url = webui_url
+                    if db_host:
+                        app.db_host = db_host
+                    if shutdown_order and shutdown_order.isdigit():
+                        app.shutdown_order = int(shutdown_order)
+                    updated += 1
+                else:
+                    # Create new application
+                    app = Application(
+                        name=name,
+                        team_id=team.id,
+                        host=host,
+                        port=int(port) if port and port.isdigit() else None,
+                        webui_url=webui_url,
+                        db_host=db_host,
+                        shutdown_order=int(shutdown_order) if shutdown_order and shutdown_order.isdigit() else 100
+                    )
+                    db.session.add(app)
+                    imported += 1
+                
+                # Commit every 100 records to avoid large transactions
+                if (imported + updated + skipped) % 100 == 0:
+                    db.session.commit()
+                
+                # Store dependencies for later processing
+                if dependencies:
+                    for dep_name in dependencies.split(';'):
+                        if dep_name := clean_csv_value(dep_name):
+                            if dep_app := Application.query.filter_by(name=dep_name).first():
+                                dependency = ApplicationDependency(
+                                    application_id=app.id,
+                                    dependency_id=dep_app.id,
+                                    dependency_type='shutdown_before'
+                                )
+                                db.session.add(dependency)
                 
             except Exception as e:
                 errors.append(f"Error processing row {name}: {str(e)}")
+                continue  # Continue with next record even if this one fails
         
-        # Process in batches
-        for i in range(0, len(applications_to_process), batch_size):
-            batch = applications_to_process[i:i + batch_size]
-            
-            # Process each application in the batch
-            for app_data in batch:
-                try:
-                    # Get or create team
-                    team = Team.query.filter_by(name=app_data['team_name']).first()
-                    if not team:
-                        team = Team(name=app_data['team_name'])
-                        db.session.add(team)
-                        db.session.flush()
-                    
-                    # Check if application exists
-                    app = Application.query.filter_by(name=app_data['name']).first()
-                    
-                    if app and merge_mode == 'skip':
-                        skipped += 1
-                        continue
-                    
-                    if app and merge_mode == 'merge':
-                        # Update existing application
-                        app.team_id = team.id
-                        app.host = app_data['host']
-                        if app_data['port'] and app_data['port'].isdigit():
-                            app.port = int(app_data['port'])
-                        if app_data['webui_url']:
-                            app.webui_url = app_data['webui_url']
-                        if app_data['db_host']:
-                            app.db_host = app_data['db_host']
-                        if app_data['shutdown_order'] and app_data['shutdown_order'].isdigit():
-                            app.shutdown_order = int(app_data['shutdown_order'])
-                        updated += 1
-                    else:
-                        # Create new application
-                        app = Application(
-                            name=app_data['name'],
-                            team_id=team.id,
-                            host=app_data['host'],
-                            port=int(app_data['port']) if app_data['port'] and app_data['port'].isdigit() else None,
-                            webui_url=app_data['webui_url'],
-                            db_host=app_data['db_host'],
-                            shutdown_order=int(app_data['shutdown_order']) if app_data['shutdown_order'] and app_data['shutdown_order'].isdigit() else 100
-                        )
-                        db.session.add(app)
-                        imported += 1
-                    
-                    db.session.flush()
-                    
-                    # Store dependencies for later processing
-                    if app_data['dependencies']:
-                        dependencies_to_process.append({
-                            'app': app,
-                            'dependencies': app_data['dependencies']
-                        })
-                    
-                except Exception as e:
-                    errors.append(f"Error importing {app_data['name']}: {str(e)}")
-            
-            # Commit the batch
-            db.session.commit()
-        
-        # Process dependencies after all applications are created
-        for dep_data in dependencies_to_process:
-            app = dep_data['app']
-            for dep_name in dep_data['dependencies']:
-                if dep_name := clean_csv_value(dep_name):
-                    if dep_app := Application.query.filter_by(name=dep_name).first():
-                        dependency = ApplicationDependency(
-                            application_id=app.id,
-                            dependency_id=dep_app.id,
-                            dependency_type='shutdown_before'
-                        )
-                        db.session.add(dependency)
-        
-        # Final commit for dependencies
+        # Final commit for any remaining records
         db.session.commit()
         
         return jsonify({
