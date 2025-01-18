@@ -113,6 +113,87 @@
             background-color: var(--darker-bg);
             border-color: var(--dark-border);
         }
+        
+        /* Tooltip styles */
+        [data-bs-toggle="tooltip"] {
+            position: relative;
+        }
+        
+        .tooltip {
+            --bs-tooltip-bg: var(--darker-bg);
+            --bs-tooltip-color: var(--dark-text);
+        }
+        
+        .tooltip .tooltip-inner {
+            background-color: var(--darker-bg);
+            color: var(--dark-text);
+            border: 1px solid var(--dark-border);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            font-size: 0.875rem;
+            padding: 8px 12px;
+        }
+        
+        .tooltip.bs-tooltip-top .tooltip-arrow::before {
+            border-top-color: var(--darker-bg);
+        }
+        
+        .tooltip.bs-tooltip-bottom .tooltip-arrow::before {
+            border-bottom-color: var(--darker-bg);
+        }
+        
+        .tooltip.bs-tooltip-start .tooltip-arrow::before {
+            border-left-color: var(--darker-bg);
+        }
+        
+        .tooltip.bs-tooltip-end .tooltip-arrow::before {
+            border-right-color: var(--darker-bg);
+        }
+        
+        /* Popover styles */
+        .popover {
+            background-color: var(--darker-bg);
+            border-color: var(--dark-border);
+        }
+        
+        .popover-header {
+            background-color: var(--dark-bg);
+            border-bottom: 1px solid var(--dark-border);
+            color: var(--dark-text);
+        }
+        
+        .popover-body {
+            color: var(--dark-text);
+        }
+        
+        .popover .popover-arrow::before {
+            border-color: var(--dark-border);
+        }
+        
+        .popover .popover-arrow::after {
+            border-color: var(--darker-bg);
+        }
+        
+        /* Button hover text */
+        [title] {
+            position: relative;
+        }
+        
+        [title]:hover::after {
+            content: attr(title);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: var(--darker-bg);
+            color: var(--dark-text);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 1000;
+            border: 1px solid var(--dark-border);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
     </style>
 </head>
 <body>

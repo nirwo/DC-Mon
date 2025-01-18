@@ -85,19 +85,39 @@
                                 </td>
                                 <td>
                                     <div class="btn-group">
-                                        <button class="btn btn-sm btn-outline-primary" onclick="editApplication({{ app.id }})">
+                                        <button class="btn btn-sm btn-outline-primary" 
+                                                onclick="editApplication({{ app.id }})"
+                                                data-bs-toggle="tooltip" 
+                                                data-bs-placement="top" 
+                                                title="Edit Application">
                                             <i class="bi bi-pencil"></i>
                                         </button>
-                                        <button class="btn btn-sm btn-outline-info" onclick="checkStatus({{ app.id }})">
+                                        <button class="btn btn-sm btn-outline-info" 
+                                                onclick="checkStatus({{ app.id }})"
+                                                data-bs-toggle="tooltip" 
+                                                data-bs-placement="top" 
+                                                title="Check Status">
                                             <i class="bi bi-arrow-clockwise"></i>
                                         </button>
-                                        <button class="btn btn-sm btn-outline-danger" onclick="confirmShutdown({{ app.id }})">
+                                        <button class="btn btn-sm btn-outline-danger" 
+                                                onclick="confirmShutdown({{ app.id }})"
+                                                data-bs-toggle="tooltip" 
+                                                data-bs-placement="top" 
+                                                title="Shutdown Application">
                                             <i class="bi bi-power"></i>
                                         </button>
-                                        <button class="btn btn-sm btn-outline-secondary" onclick="viewShutdownSequence({{ app.id }})">
+                                        <button class="btn btn-sm btn-outline-secondary" 
+                                                onclick="viewShutdownSequence({{ app.id }})"
+                                                data-bs-toggle="tooltip" 
+                                                data-bs-placement="top" 
+                                                title="View Shutdown Sequence">
                                             <i class="bi bi-list-ol"></i>
                                         </button>
-                                        <button class="btn btn-sm btn-outline-danger" onclick="confirmDeleteApplication({{ app.id }}, '{{ app.name }}')">
+                                        <button class="btn btn-sm btn-outline-danger" 
+                                                onclick="confirmDeleteApplication({{ app.id }}, '{{ app.name }}')"
+                                                data-bs-toggle="tooltip" 
+                                                data-bs-placement="top" 
+                                                title="Delete Application">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </div>
@@ -687,5 +707,13 @@ setInterval(checkAllStatus, 30000);
 
 // Initial status check
 checkAllStatus();
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize all tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    });
+});
 </script>
 {% endblock %}
