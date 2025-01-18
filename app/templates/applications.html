@@ -325,35 +325,292 @@
 
 <!-- Import Modal -->
 <div class="modal fade" id="importModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Import Applications</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="importForm">
-                    <div class="mb-3">
-                        <label for="file" class="form-label">CSV File</label>
-                        <input type="file" class="form-control" id="file" name="file" accept=".csv">
+                <div class="import-wizard">
+                    <!-- Step 1: File Selection -->
+                    <div class="step" id="step1">
+                        <h6 class="mb-3">Step 1: Select CSV File</h6>
+                        <div class="mb-3">
+                            <label class="form-label">CSV File</label>
+                            <input type="file" class="form-control" id="csvFile" accept=".csv">
+                            <div class="form-text">
+                                Your CSV should include these columns: name, team, host, port (optional), webui_url (optional), db_host (optional), shutdown_order (optional), dependencies (optional)
+                            </div>
+                        </div>
+                        <div class="alert alert-info">
+                            <h6 class="alert-heading">CSV Format Guide</h6>
+                            <p class="mb-0">
+                                <strong>Required Fields:</strong><br>
+                                - name: Application name<br>
+                                - team: Team name<br>
+                                - host: Server hostname<br><br>
+                                <strong>Optional Fields:</strong><br>
+                                - port: Port number<br>
+                                - webui_url: Web UI URL<br>
+                                - db_host: Database host<br>
+                                - shutdown_order: Order (1-100)<br>
+                                - dependencies: Semicolon-separated list
+                            </p>
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Import Mode</label>
-                        <select class="form-select" name="merge_mode">
-                            <option value="skip">Skip existing applications</option>
-                            <option value="merge">Update existing applications</option>
-                            <option value="replace">Replace all applications</option>
-                        </select>
+                    
+                    <!-- Step 2: Import Options -->
+                    <div class="step" id="step2" style="display: none;">
+                        <h6 class="mb-3">Step 2: Import Options</h6>
+                        <div class="mb-4">
+                            <label class="form-label">Import Mode</label>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="importMode" id="modeSkip" value="skip" checked>
+                                <label class="form-check-label" for="modeSkip">
+                                    <strong>Skip Existing</strong>
+                                    <div class="text-muted">Skip applications that already exist</div>
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="importMode" id="modeMerge" value="merge">
+                                <label class="form-check-label" for="modeMerge">
+                                    <strong>Merge</strong>
+                                    <div class="text-muted">Update existing applications with new data</div>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="importMode" id="modeReplace" value="replace">
+                                <label class="form-check-label" for="modeReplace">
+                                    <strong>Replace All</strong>
+                                    <div class="text-muted">Delete all existing applications and import new ones</div>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Replace All</strong> mode will delete all existing applications and their dependencies.
+                        </div>
                     </div>
-                </form>
+                    
+                    <!-- Step 3: Preview -->
+                    <div class="step" id="step3" style="display: none;">
+                        <h6 class="mb-3">Step 3: Preview</h6>
+                        <div class="preview-container">
+                            <div class="table-responsive">
+                                <table class="table table-sm" id="previewTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Team</th>
+                                            <th>Host</th>
+                                            <th>Port</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div id="previewStats" class="alert alert-info mt-3">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Progress -->
+                    <div class="progress" style="display: none;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"></div>
+                    </div>
+                    
+                    <!-- Results -->
+                    <div id="importResults" style="display: none;">
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="importApplications()">Import</button>
+                <button type="button" class="btn btn-primary" id="prevStep" style="display: none;">Previous</button>
+                <button type="button" class="btn btn-primary" id="nextStep">Next</button>
+                <button type="button" class="btn btn-success" id="importButton" style="display: none;">Import</button>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+let currentStep = 1;
+let csvData = null;
+let previewData = null;
+
+document.getElementById('csvFile').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            csvData = e.target.result;
+            previewCSV(csvData);
+        };
+        reader.readAsText(file);
+    }
+});
+
+function previewCSV(csv) {
+    const lines = csv.split('\n');
+    const headers = lines[0].split(',');
+    
+    // Preview first 5 rows
+    const previewRows = lines.slice(1, 6).map(line => {
+        const values = line.split(',');
+        return headers.reduce((obj, header, i) => {
+            obj[header.trim()] = values[i] ? values[i].trim() : '';
+            return obj;
+        }, {});
+    });
+    
+    previewData = previewRows;
+    
+    const tbody = document.querySelector('#previewTable tbody');
+    tbody.innerHTML = '';
+    
+    previewRows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${row.name || ''}</td>
+            <td>${row.team || ''}</td>
+            <td>${row.host || ''}</td>
+            <td>${row.port || ''}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    // Update stats
+    const totalRows = lines.length - 1;
+    document.getElementById('previewStats').innerHTML = `
+        <strong>Total Records:</strong> ${totalRows}<br>
+        <strong>Preview showing:</strong> ${Math.min(5, totalRows)} of ${totalRows} records
+    `;
+}
+
+document.getElementById('nextStep').addEventListener('click', function() {
+    if (currentStep === 1) {
+        if (!csvData) {
+            alert('Please select a CSV file first');
+            return;
+        }
+        document.getElementById('step1').style.display = 'none';
+        document.getElementById('step2').style.display = 'block';
+        document.getElementById('prevStep').style.display = 'block';
+        currentStep = 2;
+    } else if (currentStep === 2) {
+        document.getElementById('step2').style.display = 'none';
+        document.getElementById('step3').style.display = 'block';
+        document.getElementById('nextStep').style.display = 'none';
+        document.getElementById('importButton').style.display = 'block';
+        currentStep = 3;
+    }
+});
+
+document.getElementById('prevStep').addEventListener('click', function() {
+    if (currentStep === 2) {
+        document.getElementById('step2').style.display = 'none';
+        document.getElementById('step1').style.display = 'block';
+        document.getElementById('prevStep').style.display = 'none';
+        currentStep = 1;
+    } else if (currentStep === 3) {
+        document.getElementById('step3').style.display = 'none';
+        document.getElementById('step2').style.display = 'block';
+        document.getElementById('nextStep').style.display = 'block';
+        document.getElementById('importButton').style.display = 'none';
+        currentStep = 2;
+    }
+});
+
+document.getElementById('importButton').addEventListener('click', async function() {
+    const importMode = document.querySelector('input[name="importMode"]:checked').value;
+    const formData = new FormData();
+    formData.append('file', document.getElementById('csvFile').files[0]);
+    formData.append('merge_mode', importMode);
+    
+    // Show progress
+    const progress = document.querySelector('.progress');
+    const progressBar = progress.querySelector('.progress-bar');
+    progress.style.display = 'block';
+    progressBar.style.width = '0%';
+    
+    try {
+        // Animate progress
+        let width = 0;
+        const interval = setInterval(() => {
+            width += 5;
+            if (width <= 90) {
+                progressBar.style.width = width + '%';
+            }
+        }, 100);
+        
+        const response = await fetch('/import_apps', {
+            method: 'POST',
+            body: formData
+        });
+        
+        clearInterval(interval);
+        progressBar.style.width = '100%';
+        
+        const result = await response.json();
+        
+        // Show results
+        const results = document.getElementById('importResults');
+        results.style.display = 'block';
+        
+        if (result.error) {
+            results.innerHTML = `
+                <div class="alert alert-danger">
+                    <h6 class="alert-heading">Import Failed</h6>
+                    <p>${result.error}</p>
+                </div>
+            `;
+        } else {
+            results.innerHTML = `
+                <div class="alert alert-success">
+                    <h6 class="alert-heading">Import Successful</h6>
+                    <p>
+                        <strong>Imported:</strong> ${result.imported}<br>
+                        <strong>Updated:</strong> ${result.updated}<br>
+                        <strong>Skipped:</strong> ${result.skipped}
+                    </p>
+                    ${result.errors ? `
+                        <hr>
+                        <h6>Warnings:</h6>
+                        <ul class="mb-0">
+                            ${result.errors.map(err => `<li>${err}</li>`).join('')}
+                        </ul>
+                    ` : ''}
+                </div>
+            `;
+        }
+        
+        // Hide buttons except close
+        document.getElementById('prevStep').style.display = 'none';
+        document.getElementById('importButton').style.display = 'none';
+        
+        // Refresh the page after 2 seconds on success
+        if (!result.error) {
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        }
+        
+    } catch (error) {
+        const results = document.getElementById('importResults');
+        results.style.display = 'block';
+        results.innerHTML = `
+            <div class="alert alert-danger">
+                <h6 class="alert-heading">Import Failed</h6>
+                <p>An unexpected error occurred: ${error.message}</p>
+            </div>
+        `;
+    }
+});
+</script>
+
 <style>
 .instance-row {
     padding: 2px 0;

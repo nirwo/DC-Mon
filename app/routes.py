@@ -231,160 +231,120 @@ def export_apps():
 @main.route('/import_apps', methods=['POST'])
 def import_apps():
     if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-        
-    file = request.files['file']
-    if not file or file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-        
-    if not file.filename.endswith('.csv'):
-        return jsonify({'error': 'File must be a CSV'}), 400
+        return jsonify({'error': 'No file provided'}), 400
     
-    merge_mode = request.form.get('merge_mode', 'skip')  # skip, merge, or replace
+    file = request.files['file']
+    if not file or not file.filename.endswith('.csv'):
+        return jsonify({'error': 'Invalid file format. Please upload a CSV file.'}), 400
+    
+    merge_mode = request.form.get('merge_mode', 'skip')
+    if merge_mode not in ['skip', 'merge', 'replace']:
+        return jsonify({'error': 'Invalid merge mode'}), 400
     
     try:
-        # Read CSV content
-        content = file.read().decode('utf-8-sig')  # Handle BOM if present
-        reader = csv.DictReader(StringIO(content))
+        # Read CSV file
+        csv_data = file.read().decode('utf-8').splitlines()
+        reader = csv.DictReader(csv_data)
         
-        # Map columns
-        column_mapping = map_csv_columns(reader.fieldnames)
-        
-        # Validate required fields
+        # Validate headers
         required_fields = ['name', 'team', 'host']
-        missing_fields = [field for field in required_fields if field not in column_mapping]
+        missing_fields = [field for field in required_fields if field not in reader.fieldnames]
         if missing_fields:
-            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
-
-        # If replace mode, delete all existing applications
-        if merge_mode == 'replace':
-            ApplicationDependency.query.delete()
-            ApplicationInstance.query.delete()
-            Application.query.delete()
-            db.session.commit()
+            return jsonify({
+                'error': f'Missing required fields: {", ".join(missing_fields)}'
+            }), 400
         
         # Start transaction
-        imported = 0
-        updated = 0
-        skipped = 0
+        imported = updated = skipped = 0
         errors = []
         
-        # Create dictionaries to store teams and applications to minimize database queries
-        teams_cache = {}
-        apps_cache = {}
-        pending_dependencies = []
+        # Cache teams for better performance
+        team_cache = {}
+        app_cache = {}
         
-        # Process all rows
+        # Delete all if replace mode
+        if merge_mode == 'replace':
+            ApplicationInstance.query.delete()
+            Application.query.delete()
+            Team.query.delete()
+            db.session.commit()
+        
+        # Process each row
         for row in reader:
             try:
-                # Clean and map values
-                name = clean_csv_value(row.get(column_mapping['name']))
-                team_name = clean_csv_value(row.get(column_mapping['team']))
-                host = clean_csv_value(row.get(column_mapping['host']))
-                
-                # Skip row if required fields are empty
-                if not all([name, team_name, host]):
-                    errors.append(f"Skipping row: missing required fields (name: {name}, team: {team_name}, host: {host})")
-                    continue
-                
-                # Get optional values
-                port = clean_csv_value(row.get(column_mapping.get('port')))
-                webui_url = clean_csv_value(row.get(column_mapping.get('webui_url')))
-                db_host = clean_csv_value(row.get(column_mapping.get('db_host')))
-                shutdown_order = clean_csv_value(row.get(column_mapping.get('shutdown_order')))
-                dependencies = clean_csv_value(row.get(column_mapping.get('dependencies')))
-                
-                # Get or create team using cache
-                if team_name not in teams_cache:
+                # Get or create team
+                team_name = row['team'].strip()
+                if team_name in team_cache:
+                    team = team_cache[team_name]
+                else:
                     team = Team.query.filter_by(name=team_name).first()
                     if not team:
                         team = Team(name=team_name)
                         db.session.add(team)
-                        db.session.flush()
-                    teams_cache[team_name] = team
-                team = teams_cache[team_name]
+                        db.session.flush()  # Get ID without committing
+                    team_cache[team_name] = team
                 
                 # Get or create application
-                app = apps_cache.get(name) or Application.query.filter_by(name=name).first()
-                
-                if not app:
-                    app = Application(
-                        name=name,
-                        team_id=team.id,
-                        shutdown_order=int(shutdown_order) if shutdown_order and shutdown_order.isdigit() else 100
-                    )
-                    db.session.add(app)
-                    db.session.flush()
-                    apps_cache[name] = app
-                    imported += 1
-                elif merge_mode == 'skip':
-                    skipped += 1
-                    continue
-                elif merge_mode == 'merge':
-                    app.team_id = team.id
-                    if shutdown_order and shutdown_order.isdigit():
-                        app.shutdown_order = int(shutdown_order)
-                    updated += 1
-                
-                # Get or create instance
-                instance = ApplicationInstance.query.filter_by(
-                    application_id=app.id,
-                    host=host
-                ).first()
-                
-                if not instance:
-                    instance = ApplicationInstance(
-                        application_id=app.id,
-                        host=host,
-                        port=int(port) if port and port.isdigit() else None,
-                        webui_url=webui_url,
-                        db_host=db_host
-                    )
-                    db.session.add(instance)
+                app_name = row['name'].strip()
+                if app_name in app_cache:
+                    app = app_cache[app_name]
+                    if merge_mode == 'skip':
+                        skipped += 1
+                        continue
                 else:
-                    instance.port = int(port) if port and port.isdigit() else instance.port
-                    instance.webui_url = webui_url if webui_url else instance.webui_url
-                    instance.db_host = db_host if db_host else instance.db_host
+                    app = Application.query.filter_by(name=app_name).first()
+                    if app:
+                        if merge_mode == 'skip':
+                            skipped += 1
+                            continue
+                        elif merge_mode == 'merge':
+                            updated += 1
+                    else:
+                        app = Application(name=app_name)
+                        imported += 1
+                    app_cache[app_name] = app
                 
-                # Store dependencies for later processing
-                if dependencies:
-                    for dep_name in dependencies.split(';'):
-                        if dep_name := clean_csv_value(dep_name):
-                            # Add to pending dependencies to process after all apps are created
-                            pending_dependencies.append((app.id, dep_name))
+                # Update application
+                app.team = team
+                app.shutdown_order = int(row.get('shutdown_order', 100))
+                app.dependencies = row.get('dependencies', '').split(';') if row.get('dependencies') else []
+                
+                if not app.id:
+                    db.session.add(app)
+                    db.session.flush()  # Get ID without committing
+                
+                # Create instance
+                instance = ApplicationInstance(
+                    application=app,
+                    host=row['host'].strip(),
+                    port=int(row['port']) if row.get('port') else None,
+                    webui_url=row.get('webui_url', '').strip() or None,
+                    db_host=row.get('db_host', '').strip() or None
+                )
+                db.session.add(instance)
+                
+                # Commit every 100 rows for memory efficiency
+                if (imported + updated + skipped) % 100 == 0:
+                    db.session.commit()
                 
             except Exception as e:
-                errors.append(f"Error processing row {name}: {str(e)}")
+                errors.append(f"Error processing row {reader.line_num}: {str(e)}")
                 continue
-        
-        # Process dependencies after all applications are created
-        for app_id, dep_name in pending_dependencies:
-            if dep_app := Application.query.filter_by(name=dep_name).first():
-                if not ApplicationDependency.query.filter_by(
-                    application_id=app_id,
-                    dependency_id=dep_app.id
-                ).first():
-                    dependency = ApplicationDependency(
-                        application_id=app_id,
-                        dependency_id=dep_app.id,
-                        dependency_type='shutdown_before'
-                    )
-                    db.session.add(dependency)
         
         # Final commit
         db.session.commit()
         
         return jsonify({
-            'message': f'Import completed: {imported} imported, {updated} updated, {skipped} skipped',
             'imported': imported,
             'updated': updated,
             'skipped': skipped,
-            'errors': errors if errors else None
+            'errors': errors if errors else None,
+            'message': f'Import completed: {imported} imported, {updated} updated, {skipped} skipped'
         })
-            
+        
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Error processing CSV: {str(e)}'}), 400
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/check_status/<int:app_id>')
 def check_status(app_id):
