@@ -1,0 +1,13 @@
+name,team,host,port,webui_url,db_host,shutdown_order,dependencies
+Frontend Service,Web Team,web1.example.com,8080,http://web1:8080,,100,Backend API;Cache Service
+Frontend Service,Web Team,web2.example.com,8080,http://web2:8080,,100,Backend API;Cache Service
+Frontend Service,Web Team,web3.example.com,8080,http://web3:8080,,100,Backend API;Cache Service
+Backend API,API Team,api1.example.com,3000,http://api1:3000,db1.example.com:5432,90,Database;Cache Service
+Backend API,API Team,api2.example.com,3000,http://api2:3000,db1.example.com:5432,90,Database;Cache Service
+Backend API,API Team,api3.example.com,3000,http://api3:3000,db2.example.com:5432,90,Database;Cache Service
+Cache Service,Infrastructure,cache1.example.com,6379,,,95,Database
+Cache Service,Infrastructure,cache2.example.com,6379,,,95,Database
+Cache Service,Infrastructure,cache3.example.com,6379,,,95,Database
+Database,DB Team,db1.example.com,5432,,,80,
+Database,DB Team,db2.example.com,5432,,,80,
+Database,DB Team,db3.example.com,5432,,,80,
