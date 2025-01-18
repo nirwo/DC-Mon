@@ -1,0 +1,4 @@
+name,team,host,port,webui_url,db_host,shutdown_order,dependencies
+Customer Portal,Frontend Team,web1.internal,8080,http://web1.internal:8080,,100,
+Admin Dashboard,Backend Team,web2.internal,8081,http://web2.internal:8081,db1.internal:5432,90,Customer Portal
+Database Service,Database Team,db1.internal,5432,,,80,Admin Dashboard;Customer Portal

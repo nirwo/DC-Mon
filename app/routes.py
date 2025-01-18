@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request, jsonify, send_file, make_response
 from app.models import db, Team, Application, ApplicationDependency
 from app.utils import get_application_status, get_shutdown_sequence, check_application_status
 import csv
@@ -126,58 +126,129 @@ def update_application(app_id):
     db.session.commit()
     return jsonify({'message': 'Application updated successfully'})
 
-@main.route('/import_csv', methods=['POST'])
-def import_csv():
+@main.route('/export_template')
+def export_template():
+    return send_file('../template.csv',
+                    mimetype='text/csv',
+                    as_attachment=True,
+                    download_name='shutdown_manager_template.csv')
+
+@main.route('/export_apps')
+def export_apps():
+    si = StringIO()
+    writer = csv.writer(si)
+    writer.writerow(['name', 'team', 'host', 'port', 'webui_url', 'db_host', 'shutdown_order', 'dependencies'])
+    
+    apps = Application.query.all()
+    for app in apps:
+        dependencies = ';'.join([dep.dependency.name for dep in app.dependencies])
+        writer.writerow([
+            app.name,
+            app.team.name,
+            app.host,
+            app.port,
+            app.webui_url or '',
+            app.db_host or '',
+            app.shutdown_order,
+            dependencies
+        ])
+    
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = "attachment; filename=applications.csv"
+    output.headers["Content-type"] = "text/csv"
+    return output
+
+@main.route('/import_apps', methods=['POST'])
+def import_apps():
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
-    
+        
     file = request.files['file']
-    if file.filename == '':
+    if not file or file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
-    
-    content = file.read().decode('utf-8')
-    csv_file = StringIO(content)
-    csv_reader = csv.DictReader(csv_file)
+        
+    if not file.filename.endswith('.csv'):
+        return jsonify({'error': 'File must be a CSV'}), 400
     
     try:
-        for row in csv_reader:
-            team = Team.query.filter_by(name=row['team_name']).first()
-            if not team:
-                team = Team(name=row['team_name'])
-                db.session.add(team)
-                db.session.flush()
-            
-            app = Application(
-                name=row['app_name'],
-                team_id=team.id,
-                host=row['host'],
-                port=int(row['port']) if row['port'] else None,
-                webui_url=row['webui_url'],
-                db_host=row['db_host'],
-                shutdown_order=int(row['shutdown_order'])
-            )
-            db.session.add(app)
-            
-            # Handle dependencies if present
-            if 'dependencies' in row and row['dependencies']:
-                for dep in row['dependencies'].split(';'):
-                    if not dep:
-                        continue
-                    host, port = dep.split(':')
-                    dep_app = Application.query.filter_by(host=host, port=port).first()
-                    if dep_app:
-                        dependency = ApplicationDependency(
-                            application_id=app.id,
-                            dependency_id=dep_app.id,
-                            dependency_type='shutdown_before'
-                        )
-                        db.session.add(dependency)
+        # Read CSV content
+        content = file.read().decode('utf-8')
+        csv_data = list(csv.DictReader(StringIO(content)))
         
-        db.session.commit()
-        return jsonify({'message': 'Import successful'}), 200
+        # Validate CSV structure
+        required_fields = ['name', 'team', 'host', 'port', 'shutdown_order']
+        for field in required_fields:
+            if field not in csv_data[0]:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        # Start transaction
+        imported = 0
+        skipped = 0
+        errors = []
+        
+        for row in csv_data:
+            try:
+                # Get or create team
+                team = Team.query.filter_by(name=row['team']).first()
+                if not team:
+                    team = Team(name=row['team'])
+                    db.session.add(team)
+                    db.session.flush()
+                
+                # Check if application already exists
+                app = Application.query.filter_by(name=row['name']).first()
+                if app:
+                    skipped += 1
+                    continue
+                
+                # Create new application
+                app = Application(
+                    name=row['name'],
+                    team_id=team.id,
+                    host=row['host'],
+                    port=int(row['port']) if row['port'] else None,
+                    webui_url=row['webui_url'] if row['webui_url'] else None,
+                    db_host=row['db_host'] if row['db_host'] else None,
+                    shutdown_order=int(row['shutdown_order']) if row['shutdown_order'] else 100
+                )
+                db.session.add(app)
+                db.session.flush()
+                
+                # Handle dependencies
+                if row.get('dependencies'):
+                    for dep_name in row['dependencies'].split(';'):
+                        if dep_name.strip():
+                            dep_app = Application.query.filter_by(name=dep_name.strip()).first()
+                            if dep_app:
+                                dependency = ApplicationDependency(
+                                    application_id=app.id,
+                                    dependency_id=dep_app.id
+                                )
+                                db.session.add(dependency)
+                
+                imported += 1
+                
+            except Exception as e:
+                errors.append(f"Error importing {row.get('name', 'unknown')}: {str(e)}")
+        
+        # Commit transaction if no errors
+        if not errors:
+            db.session.commit()
+            return jsonify({
+                'message': f'Successfully imported {imported} applications ({skipped} skipped)',
+                'imported': imported,
+                'skipped': skipped
+            })
+        else:
+            db.session.rollback()
+            return jsonify({
+                'error': 'Import failed',
+                'details': errors
+            }), 400
+            
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 400
+        return jsonify({'error': f'Error processing CSV: {str(e)}'}), 400
 
 @main.route('/check_status/<int:app_id>')
 def check_status(app_id):
