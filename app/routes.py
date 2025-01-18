@@ -157,6 +157,20 @@ def update_application(app_id):
     db.session.commit()
     return jsonify({'message': 'Application updated successfully'})
 
+@main.route('/api/applications/<int:app_id>', methods=['DELETE'])
+def delete_application(app_id):
+    app = Application.query.get_or_404(app_id)
+    
+    # Delete dependencies
+    ApplicationDependency.query.filter_by(application_id=app_id).delete()
+    ApplicationDependency.query.filter_by(dependency_id=app_id).delete()
+    
+    # Delete application
+    db.session.delete(app)
+    db.session.commit()
+    
+    return jsonify({'message': 'Application deleted successfully'})
+
 @main.route('/export_template')
 def export_template():
     return send_file('../template.csv',
@@ -391,3 +405,20 @@ def shutdown_application(app_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 400
+
+@main.route('/api/teams/<int:team_id>', methods=['DELETE'])
+def delete_team(team_id):
+    team = Team.query.get_or_404(team_id)
+    
+    # Check if team has applications
+    if team.applications:
+        return jsonify({
+            'error': 'Cannot delete team with applications',
+            'applications': [app.name for app in team.applications]
+        }), 400
+    
+    # Delete team
+    db.session.delete(team)
+    db.session.commit()
+    
+    return jsonify({'message': 'Team deleted successfully'})
