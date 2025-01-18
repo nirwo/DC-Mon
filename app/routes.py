@@ -171,6 +171,31 @@ def delete_application(app_id):
     
     return jsonify({'message': 'Application deleted successfully'})
 
+@main.route('/api/applications/bulk_delete', methods=['POST'])
+def bulk_delete_applications():
+    """Delete multiple applications at once"""
+    app_ids = request.json.get('app_ids', [])
+    if not app_ids:
+        return jsonify({'error': 'No applications selected'}), 400
+    
+    try:
+        # Delete dependencies first
+        for app_id in app_ids:
+            ApplicationDependency.query.filter_by(application_id=app_id).delete()
+            ApplicationDependency.query.filter_by(dependency_id=app_id).delete()
+        
+        # Delete applications
+        deleted = Application.query.filter(Application.id.in_(app_ids)).delete(synchronize_session=False)
+        db.session.commit()
+        
+        return jsonify({
+            'message': f'Successfully deleted {deleted} applications',
+            'deleted': deleted
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 400
+
 @main.route('/export_template')
 def export_template():
     return send_file('../template.csv',
@@ -205,60 +230,50 @@ def export_apps():
 
 @main.route('/import_apps', methods=['POST'])
 def import_apps():
-    print("Starting import_apps") # Debug log
-    
     if 'file' not in request.files:
-        print("No file in request") # Debug log
         return jsonify({'error': 'No file uploaded'}), 400
         
     file = request.files['file']
     if not file or file.filename == '':
-        print("Empty file or filename") # Debug log
         return jsonify({'error': 'No file selected'}), 400
         
     if not file.filename.endswith('.csv'):
-        print(f"Invalid file type: {file.filename}") # Debug log
         return jsonify({'error': 'File must be a CSV'}), 400
+    
+    merge_mode = request.form.get('merge_mode', 'skip')  # skip, merge, or replace
+    batch_size = 100  # Process records in batches
     
     try:
         # Read CSV content
         content = file.read().decode('utf-8-sig')  # Handle BOM if present
-        print(f"CSV content: {content[:200]}...") # Debug log - first 200 chars
-        
         reader = csv.DictReader(StringIO(content))
-        print(f"CSV headers: {reader.fieldnames}") # Debug log
         
         # Map columns
         column_mapping = map_csv_columns(reader.fieldnames)
-        print(f"Column mapping: {column_mapping}") # Debug log
         
         # Validate required fields
         required_fields = ['name', 'team', 'host']
         missing_fields = [field for field in required_fields if field not in column_mapping]
         if missing_fields:
-            print(f"Missing required fields: {missing_fields}") # Debug log
             return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
         
         # Start transaction
         imported = 0
+        updated = 0
         skipped = 0
         errors = []
+        current_batch = []
         
         for row in reader:
-            print(f"Processing row: {row}") # Debug log
             try:
                 # Clean and map values
                 name = clean_csv_value(row.get(column_mapping['name']))
                 team_name = clean_csv_value(row.get(column_mapping['team']))
                 host = clean_csv_value(row.get(column_mapping['host']))
                 
-                print(f"Cleaned values - name: {name}, team: {team_name}, host: {host}") # Debug log
-                
                 # Skip row if required fields are empty
                 if not all([name, team_name, host]):
-                    msg = f"Skipping row: missing required fields (name: {name}, team: {team_name}, host: {host})"
-                    print(msg) # Debug log
-                    errors.append(msg)
+                    errors.append(f"Skipping row: missing required fields (name: {name}, team: {team_name}, host: {host})")
                     continue
                 
                 # Get optional values
@@ -268,38 +283,76 @@ def import_apps():
                 shutdown_order = clean_csv_value(row.get(column_mapping.get('shutdown_order')))
                 dependencies = clean_csv_value(row.get(column_mapping.get('dependencies')))
                 
-                print(f"Optional values - port: {port}, webui: {webui_url}, db: {db_host}, order: {shutdown_order}, deps: {dependencies}") # Debug log
-                
                 # Get or create team
                 team = Team.query.filter_by(name=team_name).first()
                 if not team:
-                    print(f"Creating new team: {team_name}") # Debug log
                     team = Team(name=team_name)
                     db.session.add(team)
                     db.session.flush()
                 
-                # Check if application already exists
+                # Check if application exists
                 app = Application.query.filter_by(name=name).first()
-                if app:
-                    print(f"Application already exists: {name}") # Debug log
+                
+                if app and merge_mode == 'skip':
                     skipped += 1
                     continue
+                    
+                if app and merge_mode == 'merge':
+                    # Update existing application
+                    app.team_id = team.id
+                    app.host = host
+                    app.port = int(port) if port and port.isdigit() else app.port
+                    app.webui_url = webui_url if webui_url else app.webui_url
+                    app.db_host = db_host if db_host else app.db_host
+                    app.shutdown_order = int(shutdown_order) if shutdown_order and shutdown_order.isdigit() else app.shutdown_order
+                    updated += 1
+                else:
+                    # Create new application
+                    app = Application(
+                        name=name,
+                        team_id=team.id,
+                        host=host,
+                        port=int(port) if port and port.isdigit() else None,
+                        webui_url=webui_url,
+                        db_host=db_host,
+                        shutdown_order=int(shutdown_order) if shutdown_order and shutdown_order.isdigit() else 100
+                    )
+                    db.session.add(app)
+                    imported += 1
                 
-                # Create new application
-                app = Application(
-                    name=name,
-                    team_id=team.id,
-                    host=host,
-                    port=int(port) if port and port.isdigit() else None,
-                    webui_url=webui_url,
-                    db_host=db_host,
-                    shutdown_order=int(shutdown_order) if shutdown_order and shutdown_order.isdigit() else 100
-                )
-                db.session.add(app)
-                db.session.flush()
-                print(f"Created new application: {app.name}") # Debug log
+                current_batch.append(app)
                 
-                # Handle dependencies
+                # Process batch
+                if len(current_batch) >= batch_size:
+                    db.session.flush()
+                    
+                    # Handle dependencies for the batch
+                    for batch_app in current_batch:
+                        if dependencies:
+                            for dep_name in dependencies.split(';'):
+                                dep_name = clean_csv_value(dep_name)
+                                if dep_name:
+                                    dep_app = Application.query.filter_by(name=dep_name).first()
+                                    if dep_app:
+                                        dependency = ApplicationDependency(
+                                            application_id=batch_app.id,
+                                            dependency_id=dep_app.id,
+                                            dependency_type='shutdown_before'
+                                        )
+                                        db.session.add(dependency)
+                    
+                    db.session.commit()
+                    current_batch = []
+                
+            except Exception as e:
+                errors.append(f"Error importing {row.get(column_mapping['name'], 'unknown')}: {str(e)}")
+        
+        # Process remaining batch
+        if current_batch:
+            db.session.flush()
+            
+            # Handle dependencies for remaining batch
+            for batch_app in current_batch:
                 if dependencies:
                     for dep_name in dependencies.split(';'):
                         dep_name = clean_csv_value(dep_name)
@@ -307,41 +360,25 @@ def import_apps():
                             dep_app = Application.query.filter_by(name=dep_name).first()
                             if dep_app:
                                 dependency = ApplicationDependency(
-                                    application_id=app.id,
+                                    application_id=batch_app.id,
                                     dependency_id=dep_app.id,
-                                    dependency_type='shutdown_before'  # Add default dependency type
+                                    dependency_type='shutdown_before'
                                 )
                                 db.session.add(dependency)
-                                print(f"Added dependency: {app.name} -> {dep_app.name}") # Debug log
-                
-                imported += 1
-                
-            except Exception as e:
-                error_msg = f"Error importing {row.get(column_mapping['name'], 'unknown')}: {str(e)}"
-                print(f"Error: {error_msg}") # Debug log
-                errors.append(error_msg)
-        
-        # Commit transaction if we have successful imports and no errors
-        if imported > 0 and not errors:
+            
             db.session.commit()
-            msg = f'Successfully imported {imported} applications ({skipped} skipped)'
-            print(f"Success: {msg}") # Debug log
-            return jsonify({
-                'message': msg,
-                'imported': imported,
-                'skipped': skipped
-            })
-        else:
-            db.session.rollback()
-            error_msg = {'error': 'Import failed', 'details': errors}
-            print(f"Failed: {error_msg}") # Debug log
-            return jsonify(error_msg), 400
+        
+        return jsonify({
+            'message': f'Import completed: {imported} imported, {updated} updated, {skipped} skipped',
+            'imported': imported,
+            'updated': updated,
+            'skipped': skipped,
+            'errors': errors if errors else None
+        })
             
     except Exception as e:
         db.session.rollback()
-        error_msg = f'Error processing CSV: {str(e)}'
-        print(f"Exception: {error_msg}") # Debug log
-        return jsonify({'error': error_msg}), 400
+        return jsonify({'error': f'Error processing CSV: {str(e)}'}), 400
 
 @main.route('/check_status/<int:app_id>')
 def check_status(app_id):

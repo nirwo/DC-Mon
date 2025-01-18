@@ -8,17 +8,14 @@
         <div class="d-flex justify-content-between mb-3">
             <h2>Applications</h2>
             <div class="btn-group">
-                <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#importModal">
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal">
                     <i class="bi bi-upload"></i> Import
                 </button>
-                <a href="{{ url_for('main.export_template') }}" class="btn btn-outline-secondary">
+                <a href="/export_template" class="btn btn-outline-primary">
                     <i class="bi bi-download"></i> Template
                 </a>
-                <a href="{{ url_for('main.export_apps') }}" class="btn btn-outline-success">
-                    <i class="bi bi-download"></i> Export
-                </a>
-                <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addApplicationModal">
-                    <i class="bi bi-plus-lg"></i> Add
+                <button class="btn btn-danger" onclick="confirmBulkDelete()" id="bulkDeleteBtn" disabled>
+                    <i class="bi bi-trash"></i> Delete Selected
                 </button>
             </div>
         </div>
@@ -33,6 +30,9 @@
                     <table class="table table-hover">
                         <thead>
                             <tr>
+                                <th>
+                                    <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                                </th>
                                 <th>Name</th>
                                 <th>Team</th>
                                 <th>Host:Port</th>
@@ -46,6 +46,9 @@
                         <tbody>
                             {% for app in applications %}
                             <tr id="app-row-{{ app.id }}">
+                                <td>
+                                    <input type="checkbox" class="app-select" value="{{ app.id }}" onchange="updateBulkDeleteButton()">
+                                </td>
                                 <td>{{ app.name }}</td>
                                 <td>{{ app.team.name }}</td>
                                 <td>{{ app.host }}{% if app.port %}:{{ app.port }}{% endif %}</td>
@@ -250,6 +253,29 @@
     </div>
 </div>
 
+<!-- Delete Bulk Modal -->
+<div class="modal fade" id="deleteBulkModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Delete Applications</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete <span id="deleteCount">0</span> applications?</p>
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    This action cannot be undone. All dependencies will be removed.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" onclick="bulkDeleteApplications()">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Import Modal -->
 <div class="modal fade" id="importModal" tabindex="-1">
     <div class="modal-dialog">
@@ -259,21 +285,18 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="importForm" enctype="multipart/form-data">
+                <form id="importForm">
                     <div class="mb-3">
-                        <label for="csvFile" class="form-label">CSV File</label>
-                        <input type="file" class="form-control" id="csvFile" name="file" accept=".csv" required>
+                        <label for="file" class="form-label">CSV File</label>
+                        <input type="file" class="form-control" id="file" name="file" accept=".csv">
                     </div>
-                    <div class="alert alert-info">
-                        <small>
-                            <strong>Note:</strong> Download the template CSV file to see the required format.
-                            The import will:
-                            <ul>
-                                <li>Create new teams if they don't exist</li>
-                                <li>Skip existing applications (matching by name)</li>
-                                <li>Create dependencies if the referenced applications exist</li>
-                            </ul>
-                        </small>
+                    <div class="mb-3">
+                        <label class="form-label">Import Mode</label>
+                        <select class="form-select" name="merge_mode">
+                            <option value="skip">Skip existing applications</option>
+                            <option value="merge">Update existing applications</option>
+                            <option value="replace">Replace all applications</option>
+                        </select>
                     </div>
                 </form>
             </div>
@@ -525,10 +548,66 @@ function deleteApplication() {
     });
 }
 
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = document.getElementsByClassName('app-select');
+    Array.from(checkboxes).forEach(checkbox => {
+        checkbox.checked = selectAll.checked;
+    });
+    updateBulkDeleteButton();
+}
+
+function updateBulkDeleteButton() {
+    const checkboxes = document.getElementsByClassName('app-select');
+    const selectedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+    const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+    bulkDeleteBtn.disabled = selectedCount === 0;
+}
+
+function confirmBulkDelete() {
+    const checkboxes = document.getElementsByClassName('app-select');
+    const selectedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+    document.getElementById('deleteCount').textContent = selectedCount;
+    new bootstrap.Modal(document.getElementById('deleteBulkModal')).show();
+}
+
+function bulkDeleteApplications() {
+    const checkboxes = document.getElementsByClassName('app-select');
+    const selectedIds = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => parseInt(cb.value));
+    
+    fetch('/api/applications/bulk_delete', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ app_ids: selectedIds })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            location.reload();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error deleting applications');
+    })
+    .finally(() => {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('deleteBulkModal'));
+        if (modal) {
+            modal.hide();
+        }
+    });
+}
+
 function importApplications() {
     const form = document.getElementById('importForm');
     const formData = new FormData(form);
-    const fileInput = document.getElementById('csvFile');
+    const fileInput = document.getElementById('file');
     
     console.log('Selected file:', fileInput.files[0]); // Debug log
     
