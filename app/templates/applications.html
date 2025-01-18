@@ -482,48 +482,43 @@ function createApplication() {
 }
 
 function saveNewApplication() {
-    console.log('Saving new application...');
-    const name = document.getElementById('newAppName').value;
-    const teamSelect = document.getElementById('newTeam');
-    const team = teamSelect.options[teamSelect.selectedIndex].text;
-    const shutdownOrder = parseInt(document.getElementById('newShutdownOrder').value) || 0;
-    const dependencies = Array.from(document.getElementById('newDependencies')?.selectedOptions || [])
-        .map(option => parseInt(option.value));
-    
-    const data = {
-        name: name,
-        team: team,
-        shutdownOrder: shutdownOrder,
-        dependencies: dependencies
+    const formData = {
+        name: document.getElementById('newAppName').value,
+        team: document.getElementById('newTeam').options[document.getElementById('newTeam').selectedIndex].text,
+        shutdownOrder: parseInt(document.getElementById('newShutdownOrder').value) || 0,
+        dependencies: Array.from(document.getElementById('newDependencies')?.selectedOptions || [])
+            .map(option => parseInt(option.value))
     };
     
-    console.log('Saving data:', data);
+    console.log('Submitting data:', formData);
     
-    fetch('/create_application', {
+    fetch('http://localhost:5002/create_application', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
         },
-        body: JSON.stringify(data)
+        body: JSON.stringify(formData)
     })
     .then(response => {
+        console.log('Response status:', response.status);
         if (!response.ok) {
             return response.text().then(text => {
-                console.error('Server response:', text);
+                console.error('Error response:', text);
                 throw new Error(`HTTP error! status: ${response.status}, body: ${text}`);
             });
         }
         return response.json();
     })
     .then(data => {
+        console.log('Success response:', data);
         showAlert('success', 'Application created successfully');
         setTimeout(() => {
             window.location.reload();
         }, 1000);
     })
     .catch(error => {
-        console.error('Save error:', error);
+        console.error('Error:', error);
         showAlert('danger', 'Failed to create application: ' + error.message);
     });
 }
