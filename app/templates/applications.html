@@ -477,7 +477,6 @@ function confirmDeleteApplication(id, name) {
 }
 
 function createApplication() {
-    // Show modal
     const modal = new bootstrap.Modal(document.getElementById('createModal'));
     modal.show();
 }
@@ -485,7 +484,8 @@ function createApplication() {
 function saveNewApplication() {
     console.log('Saving new application...');
     const name = document.getElementById('newAppName').value;
-    const team = document.querySelector('#newTeam option:checked').text;
+    const teamSelect = document.getElementById('newTeam');
+    const team = teamSelect.options[teamSelect.selectedIndex].text;
     const shutdownOrder = parseInt(document.getElementById('newShutdownOrder').value) || 0;
     const dependencies = Array.from(document.getElementById('newDependencies')?.selectedOptions || [])
         .map(option => parseInt(option.value));
@@ -510,6 +510,7 @@ function saveNewApplication() {
     .then(response => {
         if (!response.ok) {
             return response.text().then(text => {
+                console.error('Server response:', text);
                 throw new Error(`HTTP error! status: ${response.status}, body: ${text}`);
             });
         }
