@@ -449,26 +449,21 @@ def delete_instance(instance_id):
         logger.error(f"Error in delete_instance: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@main.route('/api/applications/delete/<app_id>', methods=['DELETE'])
+@main.route('/api/applications/<app_id>', methods=['DELETE'])
 def delete_application_api(app_id):
-    db = get_db()
     try:
-        # Delete all systems for this application
+        db = get_db()
+        
+        # Delete all systems belonging to this application
         db.systems.delete_many({'application_id': str(app_id)})
         
         # Delete the application
-        result = db.applications.delete_one({'_id': ObjectId(app_id)})
+        db.applications.delete_one({'_id': ObjectId(app_id)})
         
-        if result.deleted_count == 0:
-            return jsonify({'error': 'Application not found'}), 404
-            
-        return jsonify({'status': 'success'})
+        return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/applications/<app_id>', methods=['DELETE'])
-def delete_application(app_id):
-    return delete_application_api(app_id)
+        logger.error(f"Delete application error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
 
 @main.route('/update_instance_url/<int:instance_id>', methods=['POST'])
 def update_instance_url(instance_id):
@@ -857,22 +852,6 @@ def delete_team_api(team_id):
         return jsonify({'success': True})
     except Exception as e:
         logger.error(f"Delete team error: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)})
-
-@main.route('/api/applications/<app_id>', methods=['DELETE'])
-def delete_application_api(app_id):
-    try:
-        db = get_db()
-        
-        # Delete all systems for this application
-        db.systems.delete_many({'application_id': str(app_id)})
-        
-        # Delete the application
-        db.applications.delete_one({'_id': ObjectId(app_id)})
-        
-        return jsonify({'success': True})
-    except Exception as e:
-        logger.error(f"Delete application error: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
 @main.route('/api/systems/<system_id>', methods=['DELETE'])
