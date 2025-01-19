@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, jsonify, current_app
 from app.models import db, Team, Application, ApplicationInstance
-from app.utils import check_application_status
+from app.utils import check_application_status, check_host_status
 import csv
 from datetime import datetime
 import socket
@@ -225,64 +225,49 @@ def check_status(app_id):
         results = []
         
         for instance in app.instances:
-            try:
-                url = instance.webui_url
-                if not url:
-                    url = f"http://{instance.host}"
-                    if instance.port:
-                        url += f":{instance.port}"
-                
-                response = requests.get(url, timeout=5)
-                
-                if response.status_code == 200:
-                    status = 'running'
-                    message = f'Service responded with status code {response.status_code}'
-                else:
-                    status = 'error'
-                    message = f'Service returned unexpected status code: {response.status_code}'
-            except requests.exceptions.ConnectionError as e:
-                status = 'stopped'
-                message = 'Connection refused - service may be down'
-            except requests.exceptions.Timeout as e:
-                status = 'error'
-                message = 'Request timed out - service may be unresponsive'
-            except requests.exceptions.RequestException as e:
-                status = 'error'
-                message = str(e)
+            # Check host status
+            is_running, details = check_host_status(instance.host, instance.port)
+            
+            # Check WebUI if configured
+            webui_status = True
+            webui_message = None
+            if instance.webui_url:
+                try:
+                    response = requests.get(instance.webui_url, timeout=5)
+                    if response.status_code != 200:
+                        webui_status = False
+                        webui_message = f'WebUI returned status code: {response.status_code}'
+                except Exception as e:
+                    webui_status = False
+                    webui_message = f'WebUI error: {str(e)}'
+            
+            status = 'running' if is_running and webui_status else 'stopped'
+            
+            # Combine host and WebUI status messages
+            messages = details
+            if webui_message:
+                messages.append(webui_message)
             
             results.append({
                 'host': instance.host,
                 'port': instance.port,
                 'status': status,
-                'message': message
+                'details': messages,
+                'webui_url': instance.webui_url
             })
         
         return jsonify({'results': results})
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 400
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @main.route('/check_instance_status/<int:instance_id>')
 def check_instance_status(instance_id):
     instance = ApplicationInstance.query.get_or_404(instance_id)
     try:
-        if not instance.port:  # Skip if no port specified
-            instance.status = 'unknown'
-            instance.last_checked = datetime.utcnow()
-            db.session.commit()
-            return jsonify({
-                'status': 'warning',
-                'host': instance.host,
-                'port': None,
-                'message': 'No port specified'
-            })
-            
-        # Try to connect to the host and port
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(2)  # 2 second timeout
-        result = sock.connect_ex((instance.host, instance.port))
-        sock.close()
+        # Use check_host_status from utils
+        is_running, details = check_host_status(instance.host, instance.port)
         
-        if result == 0:
+        if is_running:
             instance.status = 'running'
         else:
             instance.status = 'stopped'
@@ -303,27 +288,16 @@ def check_instance_status(instance_id):
             'status': 'success',
             'host': instance.host,
             'port': instance.port,
-            'current_status': instance.status
+            'is_running': is_running,
+            'details': details
         })
     except Exception as e:
-        instance.status = 'unknown'
-        instance.last_checked = datetime.utcnow()
-        try:
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({
-                'status': 'error',
-                'host': instance.host,
-                'port': instance.port,
-                'message': f"Database error: {str(e)}"
-            })
         return jsonify({
             'status': 'error',
             'host': instance.host,
             'port': instance.port,
             'message': str(e)
-        })
+        }), 500
 
 @main.route('/shutdown_app/<int:app_id>', methods=['POST'])
 def shutdown_app(app_id):
