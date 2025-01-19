@@ -15,11 +15,13 @@ def create_app(config_class=Config):
     db.init_app(app)
     migrate.init_app(app, db)
     
-    from .routes import main as main_bp
+    from app.routes import main as main_bp
     app.register_blueprint(main_bp)
     
+    # Ensure database exists
     with app.app_context():
-        db.create_all()
+        if not os.path.exists(app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')):
+            db.create_all()
         
         # Start background worker for status checks
         if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
