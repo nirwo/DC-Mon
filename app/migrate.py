@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 from database import get_db
 from models import Team, Application
+from bson import ObjectId
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,11 +16,13 @@ def init_db():
         logger.info("Dropping existing collections...")
         db.teams.drop()
         db.applications.drop()
+        db.systems.drop()
         
         # Create indexes
         logger.info("Creating indexes...")
         db.teams.create_index("name", unique=True)
         db.applications.create_index("name", unique=True)
+        db.systems.create_index([("application_id", 1), ("name", 1)], unique=True)
         
         # Insert sample teams
         logger.info("Inserting sample teams...")
@@ -36,6 +39,63 @@ def init_db():
             result = db.teams.insert_one(team.to_dict())
             team_ids[team.name] = str(result.inserted_id)
             logger.info(f"Added team: {team.name}")
+            
+        # Insert sample applications
+        logger.info("Inserting sample applications...")
+        applications = [
+            {
+                "name": "Web Server",
+                "team_id": ObjectId(team_ids["Infrastructure"]),
+                "state": "notStarted",
+                "enabled": False
+            },
+            {
+                "name": "Database",
+                "team_id": ObjectId(team_ids["DevOps"]),
+                "state": "notStarted",
+                "enabled": False
+            }
+        ]
+        
+        app_ids = {}
+        for app_data in applications:
+            app = Application(**app_data)
+            result = db.applications.insert_one(app.to_dict())
+            app_ids[app.name] = str(result.inserted_id)
+            logger.info(f"Added application: {app.name}")
+            
+        # Insert sample systems
+        logger.info("Inserting sample systems...")
+        systems = [
+            {
+                "name": "Web Server 1",
+                "application_id": str(app_ids["Web Server"]),
+                "status": "unknown",
+                "last_checked": datetime.utcnow()
+            },
+            {
+                "name": "Web Server 2",
+                "application_id": str(app_ids["Web Server"]),
+                "status": "unknown",
+                "last_checked": datetime.utcnow()
+            },
+            {
+                "name": "Database Primary",
+                "application_id": str(app_ids["Database"]),
+                "status": "unknown",
+                "last_checked": datetime.utcnow()
+            },
+            {
+                "name": "Database Secondary",
+                "application_id": str(app_ids["Database"]),
+                "status": "unknown",
+                "last_checked": datetime.utcnow()
+            }
+        ]
+        
+        for system_data in systems:
+            result = db.systems.insert_one(system_data)
+            logger.info(f"Added system: {system_data['name']}")
         
         logger.info("Database initialization completed successfully")
         

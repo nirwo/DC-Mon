@@ -3,162 +3,167 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <h1>System Dashboard</h1>
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Quick Actions</h5>
-            </div>
-            <div class="card-body">
-                <button class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#importModal">
-                    <i class="bi bi-upload"></i> Import CSV
-                </button>
-                <button class="btn btn-info me-2" onclick="checkAllStatus()">
-                    <i class="bi bi-arrow-repeat"></i> Check All Status
-                </button>
+<div class="container mt-4">
+    <div class="row mb-4">
+        <div class="col">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Import Data</h5>
+                </div>
+                <div class="card-body">
+                    <form onsubmit="event.preventDefault(); importCSV();">
+                        <div class="mb-3">
+                            <input type="file" class="form-control" id="csvFile" accept=".csv,.json">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Import</button>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
-</div>
 
-<div class="row">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Teams Overview</h5>
-            </div>
-            <div class="card-body">
-                <div class="list-group">
-                    {% for team in teams %}
-                    <div class="list-group-item">
-                        <h6 class="mb-1">{{ team.name }}</h6>
-                        <small>{{ team.applications }} application{% if team.applications != 1 %}s{% endif %}</small>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">Applications Status</h5>
-                <small class="text-muted" id="lastUpdateTime"></small>
-            </div>
-            <div class="card-body">
-                <div class="row mb-4">
-                    <div class="col-md-4">
-                        <div class="card bg-light">
-                            <div class="card-header">Not Started</div>
-                            <div class="card-body" id="notStartedList" ondrop="drop(event)" ondragover="allowDrop(event)">
-                                <!-- Applications will be dynamically added here -->
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="card bg-light">
-                            <div class="card-header">In Progress</div>
-                            <div class="card-body" id="inProgressList" ondrop="drop(event)" ondragover="allowDrop(event)">
-                                <!-- Applications will be dynamically added here -->
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="card bg-light">
-                            <div class="card-header">Completed</div>
-                            <div class="card-body" id="completedList" ondrop="drop(event)" ondragover="allowDrop(event)">
-                                <!-- Applications will be dynamically added here -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="list-group" id="applicationsList">
-                    {% for app in applications %}
-                    <div class="list-group-item" id="app-{{ app._id }}" draggable="true" ondragstart="drag(event)">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="mb-1">{{ app.name }}</h6>
-                                <small>Team: {{ app.team.name }}</small>
-                            </div>
-                            <div class="d-flex align-items-center">
-                                <div class="form-check form-switch me-2">
-                                    <input class="form-check-input" type="checkbox" id="toggle-{{ app._id }}" onchange="toggleApplication('{{ app._id }}')">
+    <ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link active" id="applications-tab" data-bs-toggle="tab" href="#applications" role="tab">Applications</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="teams-tab" data-bs-toggle="tab" href="#teams" role="tab">Teams</a>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="applications" role="tabpanel">
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">Not Started</div>
+                        <div class="card-body" id="notStartedList" ondrop="drop(event)" ondragover="allowDrop(event)">
+                            {% for app in applications if app.state == 'notStarted' %}
+                            <div class="card mb-2 application-card" id="app-{{ app._id }}" draggable="true" ondragstart="drag(event)">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h6 class="mb-1">{{ app.name }}</h6>
+                                            <small>Team: {{ app.team.name }}</small>
+                                        </div>
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="toggle-{{ app._id }}" {% if app.enabled %}checked{% endif %} onchange="toggleApplication('{{ app._id }}')">
+                                        </div>
+                                    </div>
+                                    {% if app.systems %}
+                                    <div class="mt-2">
+                                        <small class="text-muted">Systems:</small>
+                                        {% for system in app.systems %}
+                                        <div class="d-flex justify-content-between align-items-center mt-1">
+                                            <span class="small">{{ system.name }}</span>
+                                            <span class="badge bg-{{ 'success' if system.status == 'running' else 'secondary' }}">
+                                                {{ system.status }}
+                                            </span>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
                                 </div>
-                                <button class="btn btn-sm btn-outline-info me-2" onclick="runTests('{{ app._id }}')">
-                                    <i class="bi bi-play-circle"></i> Run Tests
-                                </button>
-                                <button class="btn btn-sm btn-outline-primary me-2" onclick="viewTestResults('{{ app._id }}')">
-                                    <i class="bi bi-list-check"></i>
-                                </button>
-                                <span class="badge bg-secondary" id="status-{{ app._id }}">
-                                    unknown
-                                </span>
                             </div>
+                            {% endfor %}
                         </div>
-                        <div class="details mt-2 d-none"></div>
                     </div>
-                    {% endfor %}
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">In Progress</div>
+                        <div class="card-body" id="inProgressList" ondrop="drop(event)" ondragover="allowDrop(event)">
+                            {% for app in applications if app.state == 'inProgress' %}
+                            <div class="card mb-2 application-card" id="app-{{ app._id }}" draggable="true" ondragstart="drag(event)">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h6 class="mb-1">{{ app.name }}</h6>
+                                            <small>Team: {{ app.team.name }}</small>
+                                        </div>
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="toggle-{{ app._id }}" {% if app.enabled %}checked{% endif %} onchange="toggleApplication('{{ app._id }}')">
+                                        </div>
+                                    </div>
+                                    {% if app.systems %}
+                                    <div class="mt-2">
+                                        <small class="text-muted">Systems:</small>
+                                        {% for system in app.systems %}
+                                        <div class="d-flex justify-content-between align-items-center mt-1">
+                                            <span class="small">{{ system.name }}</span>
+                                            <span class="badge bg-{{ 'success' if system.status == 'running' else 'secondary' }}">
+                                                {{ system.status }}
+                                            </span>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">Completed</div>
+                        <div class="card-body" id="completedList" ondrop="drop(event)" ondragover="allowDrop(event)">
+                            {% for app in applications if app.state == 'completed' %}
+                            <div class="card mb-2 application-card" id="app-{{ app._id }}" draggable="true" ondragstart="drag(event)">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h6 class="mb-1">{{ app.name }}</h6>
+                                            <small>Team: {{ app.team.name }}</small>
+                                        </div>
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="toggle-{{ app._id }}" {% if app.enabled %}checked{% endif %} onchange="toggleApplication('{{ app._id }}')">
+                                        </div>
+                                    </div>
+                                    {% if app.systems %}
+                                    <div class="mt-2">
+                                        <small class="text-muted">Systems:</small>
+                                        {% for system in app.systems %}
+                                        <div class="d-flex justify-content-between align-items-center mt-1">
+                                            <span class="small">{{ system.name }}</span>
+                                            <span class="badge bg-{{ 'success' if system.status == 'running' else 'secondary' }}">
+                                                {{ system.status }}
+                                            </span>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-</div>
 
-<!-- Import Modal -->
-<div class="modal fade" id="importModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Import CSV</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <form id="importForm">
-                    <div class="mb-3">
-                        <label for="csvFile" class="form-label">Select CSV File</label>
-                        <input type="file" class="form-control" id="csvFile" accept=".csv" required>
+        <div class="tab-pane fade" id="teams" role="tabpanel">
+            <div class="row">
+                {% for team in teams %}
+                <div class="col-md-4 mb-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">{{ team.name }}</h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="card-text">{{ team.description }}</p>
+                            <p class="mb-0">
+                                <span class="badge bg-primary">{{ team.applications }} application{% if team.applications != 1 %}s{% endif %}</span>
+                            </p>
+                        </div>
                     </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="importCSV()">Import</button>
+                </div>
+                {% endfor %}
             </div>
         </div>
     </div>
 </div>
 
-<!-- Test Results Modal -->
-<div class="modal fade" id="testResultsModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Test Results</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div id="testResults"></div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Shutdown Sequence Modal -->
-<div class="modal fade" id="shutdownSequenceModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Shutdown Sequence</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="list-group" id="shutdownSequence"></div>
-            </div>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block scripts %}
@@ -216,58 +221,6 @@ function toggleApplication(appId) {
     });
 }
 
-function runTests(appId) {
-    const statusBadge = document.getElementById(`status-${appId}`);
-    statusBadge.className = 'badge bg-warning';
-    statusBadge.textContent = 'Testing...';
-    
-    fetch(`/api/applications/${appId}/run-tests`, {
-        method: 'POST'
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            statusBadge.className = 'badge bg-danger';
-            statusBadge.textContent = 'Test Failed';
-            alert('Error: ' + data.error);
-        } else {
-            statusBadge.className = 'badge bg-success';
-            statusBadge.textContent = 'Test Passed';
-        }
-    });
-}
-
-function viewTestResults(appId) {
-    fetch(`/api/applications/${appId}/test-results`)
-    .then(response => response.json())
-    .then(data => {
-        const resultsDiv = document.getElementById('testResults');
-        if (data.error) {
-            resultsDiv.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
-        } else {
-            let html = '<div class="list-group">';
-            data.results.forEach(result => {
-                const status = result.passed ? 'success' : 'danger';
-                html += `
-                    <div class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="mb-1">${result.name}</h6>
-                                <small>${result.description}</small>
-                            </div>
-                            <span class="badge bg-${status}">${result.passed ? 'Passed' : 'Failed'}</span>
-                        </div>
-                        ${result.error ? `<div class="text-danger mt-2"><small>${result.error}</small></div>` : ''}
-                    </div>
-                `;
-            });
-            html += '</div>';
-            resultsDiv.innerHTML = html;
-        }
-        new bootstrap.Modal(document.getElementById('testResultsModal')).show();
-    });
-}
-
 function importCSV() {
     const fileInput = document.getElementById('csvFile');
     const formData = new FormData();
@@ -279,8 +232,8 @@ function importCSV() {
     })
     .then(response => response.json())
     .then(data => {
-        if (data.status === 'error') {
-            alert('Error: ' + data.message);
+        if (data.error) {
+            alert('Error: ' + data.error);
         } else {
             alert('Import successful');
             location.reload();
@@ -291,78 +244,22 @@ function importCSV() {
     });
 }
 
-function updateLastChecked() {
-    const now = new Date();
-    document.getElementById('lastUpdateTime').textContent = 
-        `Last updated: ${now.toLocaleTimeString()}`;
-}
-
-function checkStatus(appId) {
-    fetch(`/api/applications/${appId}/status`)
+// Check system status periodically
+function updateSystemStatus() {
+    fetch('/api/systems')
         .then(response => response.json())
-        .then(data => {
-            const statusBadge = document.getElementById(`status-${appId}`);
-            statusBadge.className = `badge bg-${data.status === 'running' ? 'success' : 'danger'}`;
-            statusBadge.textContent = data.status;
-            updateLastChecked();
-        })
-        .catch(error => console.error('Error:', error));
-}
-
-function viewShutdownSequence(appId) {
-    fetch(`/shutdown_sequence/${appId}`)
-        .then(response => response.json())
-        .then(data => {
-            const sequenceHtml = data.sequence.map((app, index) => `
-                <div class="list-group-item">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <span class="badge bg-secondary me-2">${index + 1}</span>
-                            <strong>${app.name}</strong>
-                            <small class="text-muted">(${app.team})</small>
-                        </div>
-                        <span class="badge bg-${app.status === 'running' ? 'success' : 'danger'}">
-                            ${app.status}
-                        </span>
-                    </div>
-                </div>
-            `).join('');
-            
-            document.getElementById('shutdownSequence').innerHTML = sequenceHtml;
-            new bootstrap.Modal(document.getElementById('shutdownSequenceModal')).show();
-        })
-        .catch(error => console.error('Error:', error));
-}
-
-// Initialize application states
-document.addEventListener('DOMContentLoaded', function() {
-    fetch('/api/applications/states')
-        .then(response => response.json())
-        .then(data => {
-            data.forEach(app => {
-                const appElement = document.getElementById(`app-${app._id}`);
-                if (appElement) {
-                    const targetList = document.getElementById(`${app.state}List`);
-                    if (targetList) {
-                        targetList.appendChild(appElement);
-                    }
+        .then(systems => {
+            systems.forEach(system => {
+                const statusElement = document.querySelector(`[data-system-id="${system.id}"] .system-status`);
+                if (statusElement) {
+                    statusElement.className = `badge bg-${system.status === 'running' ? 'success' : 'secondary'} system-status`;
+                    statusElement.textContent = system.status;
                 }
             });
         });
-});
+}
 
-// Check all status every 30 seconds
-setInterval(() => {
-    document.querySelectorAll('[id^="app-"]').forEach(app => {
-        const appId = app.id.split('-')[1];
-        checkStatus(appId);
-    });
-}, 30000);
-
-// Initial status check
-document.querySelectorAll('[id^="app-"]').forEach(app => {
-    const appId = app.id.split('-')[1];
-    checkStatus(appId);
-});
+setInterval(updateSystemStatus, 30000);
+updateSystemStatus();
 </script>
 {% endblock %}

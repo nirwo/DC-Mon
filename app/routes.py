@@ -24,7 +24,7 @@ def index():
     # Count applications per team
     for team_data in teams_data:
         team = Team.from_dict(team_data)
-        app_count = db.applications.count_documents({"team_id": str(team._id)})
+        app_count = db.applications.count_documents({"team_id": ObjectId(str(team._id))})
         team_dict = team.to_dict()
         team_dict['applications'] = app_count
         teams.append(team_dict)
@@ -32,20 +32,30 @@ def index():
     # Get applications with team info and state
     for app_data in db.applications.find():
         app = Application.from_dict(app_data)
+        app_dict = app.to_dict()
+        
+        # Get team info
         if app.team_id:
-            team = db.teams.find_one({"_id": ObjectId(app.team_id)})
+            team = db.teams.find_one({"_id": ObjectId(str(app.team_id))})
             if team:
-                app_dict = app.to_dict()
                 app_dict['team'] = {'name': team['name']}
-                app_dict['state'] = app_data.get('state', 'notStarted')
-                app_dict['enabled'] = app_data.get('enabled', False)
-                applications.append(app_dict)
+            else:
+                app_dict['team'] = {'name': 'No Team'}
         else:
-            app_dict = app.to_dict()
             app_dict['team'] = {'name': 'No Team'}
-            app_dict['state'] = app_data.get('state', 'notStarted')
-            app_dict['enabled'] = app_data.get('enabled', False)
-            applications.append(app_dict)
+            
+        # Get systems
+        systems = []
+        for system in db.systems.find({'application_id': str(app._id)}):
+            systems.append({
+                'id': str(system['_id']),
+                'name': system['name'],
+                'status': system.get('status', 'unknown'),
+                'last_checked': system.get('last_checked')
+            })
+        app_dict['systems'] = systems
+        
+        applications.append(app_dict)
     
     return render_template('index.html', teams=teams, applications=applications)
 
@@ -694,11 +704,20 @@ def get_application_status(app_id):
             return jsonify({'error': 'Application not found'}), 404
             
         enabled = app.get('enabled', False)
-        test_status = app.get('test_status', 'unknown')
+        systems = []
+        
+        # Get associated systems
+        for system in db.systems.find({'application_id': str(app_id)}):
+            systems.append({
+                'id': str(system['_id']),
+                'name': system['name'],
+                'status': system.get('status', 'unknown'),
+                'last_checked': system.get('last_checked')
+            })
         
         return jsonify({
             'status': 'running' if enabled else 'stopped',
-            'test_status': test_status
+            'systems': systems
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -732,5 +751,40 @@ def get_test_results(app_id):
             return jsonify({'results': []})
             
         return jsonify({'results': results[0].get('results', [])})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/systems')
+def get_systems():
+    db = get_db()
+    systems = []
+    try:
+        for system in db.systems.find():
+            systems.append({
+                'id': str(system['_id']),
+                'name': system['name'],
+                'status': system.get('status', 'unknown'),
+                'last_checked': system.get('last_checked'),
+                'application_id': str(system['application_id'])
+            })
+        return jsonify(systems)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/systems/<system_id>/status', methods=['POST'])
+def update_system_status(system_id):
+    db = get_db()
+    data = request.get_json()
+    status = data.get('status')
+    
+    try:
+        db.systems.update_one(
+            {'_id': ObjectId(system_id)},
+            {'$set': {
+                'status': status,
+                'last_checked': datetime.utcnow()
+            }}
+        )
+        return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
