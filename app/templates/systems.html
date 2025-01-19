@@ -13,44 +13,46 @@
                 <button type="button" onclick="importData()" class="btn btn-primary">Import Data</button>
             </div>
         </form>
-        <button onclick="checkAllStatus()" class="btn btn-secondary">Check All Status</button>
+        <button onclick="checkAllStatus()" class="btn btn-secondary" id="checkStatusBtn">Check All Status</button>
     </div>
     
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Team</th>
-                <th>Application</th>
-                <th>Host</th>
-                <th>Port</th>
-                <th>WebUI</th>
-                <th>DB Host</th>
-                <th>Status</th>
-                <th>Last Checked</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for instance in instances %}
-            <tr>
-                <td>{{ instance.application.team.name }}</td>
-                <td>{{ instance.application.name }}</td>
-                <td>{{ instance.host }}</td>
-                <td>{{ instance.port }}</td>
-                <td>
-                    {% if instance.webui_url %}
-                    <a href="{{ instance.webui_url }}" target="_blank">Open</a>
-                    {% endif %}
-                </td>
-                <td>{{ instance.db_host }}</td>
-                <td class="status-{{ instance.status|lower }}" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ instance.details }}">
-                    <i class="bi {% if instance.status == 'running' %}bi-check-circle{% elif instance.status == 'stopped' %}bi-x-circle{% elif instance.status == 'error' %}bi-exclamation-triangle{% else %}bi-question-circle{% endif %}"></i>
-                    {{ instance.status|title }}
-                </td>
-                <td>{{ instance.last_checked.strftime('%Y-%m-%d %H:%M:%S') if instance.last_checked else 'Never' }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-responsive">
+        <table class="table" id="systemsTable">
+            <thead>
+                <tr>
+                    <th>Team</th>
+                    <th>Application</th>
+                    <th>Host</th>
+                    <th>Port</th>
+                    <th>WebUI</th>
+                    <th>DB Host</th>
+                    <th>Status</th>
+                    <th>Last Checked</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for instance in instances %}
+                <tr>
+                    <td>{{ instance.application.team.name }}</td>
+                    <td>{{ instance.application.name }}</td>
+                    <td>{{ instance.host }}</td>
+                    <td>{{ instance.port }}</td>
+                    <td>
+                        {% if instance.webui_url %}
+                        <a href="{{ instance.webui_url }}" target="_blank">Open</a>
+                        {% endif %}
+                    </td>
+                    <td>{{ instance.db_host }}</td>
+                    <td class="status-{{ instance.status|lower }}" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ instance.details }}">
+                        <i class="bi {% if instance.status == 'running' %}bi-check-circle{% elif instance.status == 'stopped' %}bi-x-circle{% elif instance.status == 'error' %}bi-exclamation-triangle{% else %}bi-question-circle{% endif %}"></i>
+                        {{ instance.status|title }}
+                    </td>
+                    <td>{{ instance.last_checked.strftime('%Y-%m-%d %H:%M:%S') if instance.last_checked else 'Never' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 {% endblock %}
 
@@ -67,8 +69,6 @@ async function importData() {
         return;
     }
     
-    console.log('Reading file:', file.name);
-    
     try {
         const formData = new FormData();
         formData.append('file', file);
@@ -78,12 +78,7 @@ async function importData() {
             body: formData
         });
         
-        console.log('Response status:', response.status);
-        const responseText = await response.text();
-        console.log('Response text:', responseText);
-        
-        const result = JSON.parse(responseText);
-        console.log('Response data:', result);
+        const result = await response.json();
         
         if (result.status === 'success') {
             alert('Import successful');
@@ -97,11 +92,31 @@ async function importData() {
     }
 }
 
+function updateTable(html) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const newTable = doc.querySelector('#systemsTable tbody');
+    const currentTable = document.querySelector('#systemsTable tbody');
+    
+    if (currentTable && newTable) {
+        currentTable.innerHTML = newTable.innerHTML;
+        
+        // Reinitialize tooltips
+        const tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        tooltips.forEach(el => {
+            if (bootstrap.Tooltip.getInstance(el)) {
+                bootstrap.Tooltip.getInstance(el).dispose();
+            }
+            new bootstrap.Tooltip(el);
+        });
+    }
+}
+
 function checkAllStatus() {
     if (checkingStatus) return;
     
     checkingStatus = true;
-    const button = document.querySelector('button[onclick="checkAllStatus()"]');
+    const button = document.getElementById('checkStatusBtn');
     button.disabled = true;
     button.textContent = 'Checking Status...';
     
@@ -125,13 +140,7 @@ function checkAllStatus() {
                     fetch('/systems')
                         .then(response => response.text())
                         .then(html => {
-                            const parser = new DOMParser();
-                            const doc = parser.parseFromString(html, 'text/html');
-                            const newTable = doc.querySelector('table');
-                            const currentTable = document.querySelector('table');
-                            if (currentTable && newTable) {
-                                currentTable.innerHTML = newTable.innerHTML;
-                            }
+                            updateTable(html);
                             attempts++;
                             setTimeout(pollStatus, 5000);
                         })
@@ -158,17 +167,10 @@ function checkAllStatus() {
         });
 }
 
-// Prevent double-clicking on buttons
+// Initialize tooltips
 document.addEventListener('DOMContentLoaded', function() {
-    const buttons = document.querySelectorAll('button');
-    buttons.forEach(button => {
-        button.addEventListener('click', function(e) {
-            if (this.disabled) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-        });
-    });
+    const tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    tooltips.forEach(el => new bootstrap.Tooltip(el));
 });
 </script>
 {% endblock %}

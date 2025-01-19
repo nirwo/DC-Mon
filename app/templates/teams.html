@@ -3,211 +3,59 @@
 {% block title %}Teams{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1>Teams</h1>
-            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTeamModal">
-                <i class="bi bi-plus-circle"></i> Add Team
-            </button>
-        </div>
-
-        <div class="row">
-            {% for team in teams %}
-            <div class="col-md-6 mb-4">
-                <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="card-title mb-0">{{ team.name }}</h5>
-                        <div class="btn-group">
-                            <button class="btn btn-sm btn-outline-primary" onclick="editTeam({{ team.id }}, '{{ team.name }}')">
-                                <i class="bi bi-pencil"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-danger" onclick="confirmDeleteTeam({{ team.id }}, '{{ team.name }}')">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <h6>Applications:</h6>
-                        <ul class="list-group">
-                            {% for app in team.applications %}
-                            <li class="list-group-item">{{ app.name }}</li>
+<div class="container">
+    <h1>Teams</h1>
+    
+    <div class="table-responsive">
+        <table class="table" id="teamsTable">
+            <thead>
+                <tr>
+                    <th>Team Name</th>
+                    <th>Applications</th>
+                    <th>Total Instances</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for team in teams %}
+                <tr>
+                    <td>{{ team.name }}</td>
+                    <td>{{ team.applications|length }}</td>
+                    <td>
+                        {% set total = namespace(count=0) %}
+                        {% for app in team.applications %}
+                            {% set total.count = total.count + app.instances|length %}
+                        {% endfor %}
+                        {{ total.count }}
+                    </td>
+                    <td>
+                        {% set running = namespace(count=0) %}
+                        {% set total = namespace(count=0) %}
+                        {% for app in team.applications %}
+                            {% for instance in app.instances %}
+                                {% set total.count = total.count + 1 %}
+                                {% if instance.status == 'running' %}
+                                    {% set running.count = running.count + 1 %}
+                                {% endif %}
                             {% endfor %}
-                        </ul>
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
+                        {% endfor %}
+                        
+                        <span class="status-{% if running.count == total.count %}running{% elif running.count == 0 %}stopped{% else %}error{% endif %}">
+                            {% if running.count == total.count and total.count > 0 %}
+                                <i class="bi bi-check-circle"></i> All Running
+                            {% elif running.count == 0 and total.count > 0 %}
+                                <i class="bi bi-x-circle"></i> All Stopped
+                            {% elif total.count == 0 %}
+                                <i class="bi bi-dash-circle"></i> No Instances
+                            {% else %}
+                                <i class="bi bi-exclamation-triangle"></i> {{ running.count }}/{{ total.count }} Running
+                            {% endif %}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
-
-<!-- Add Team Modal -->
-<div class="modal fade" id="addTeamModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Add New Team</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <form id="addTeamForm">
-                    <div class="mb-3">
-                        <label for="teamName" class="form-label">Team Name</label>
-                        <input type="text" class="form-control" id="teamName" required>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="addTeam()">Add Team</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Edit Team Modal -->
-<div class="modal fade" id="editTeamModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Edit Team</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <form id="editTeamForm">
-                    <input type="hidden" id="editTeamId">
-                    <div class="mb-3">
-                        <label for="editTeamName" class="form-label">Team Name</label>
-                        <input type="text" class="form-control" id="editTeamName" required>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="updateTeam()">Update Team</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Delete Team Modal -->
-<div class="modal fade" id="deleteTeamModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Delete Team</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p>Are you sure you want to delete the team "<span id="deleteTeamName"></span>"?</p>
-                <div class="alert alert-warning">
-                    <i class="bi bi-exclamation-triangle"></i>
-                    Teams can only be deleted if they have no applications.
-                </div>
-                <div id="deleteTeamError" class="alert alert-danger d-none">
-                    Cannot delete team. The following applications belong to this team:
-                    <ul id="deleteTeamErrorList"></ul>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" onclick="deleteTeam()">Delete</button>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-function addTeam() {
-    const teamName = document.getElementById('teamName').value;
-    
-    fetch('/api/teams', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            name: teamName
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            alert('Error: ' + data.error);
-        } else {
-            location.reload();
-        }
-    })
-    .catch(error => {
-        alert('Error: ' + error);
-    });
-}
-
-function editTeam(teamId, teamName) {
-    document.getElementById('editTeamId').value = teamId;
-    document.getElementById('editTeamName').value = teamName;
-    new bootstrap.Modal(document.getElementById('editTeamModal')).show();
-}
-
-function updateTeam() {
-    const teamId = document.getElementById('editTeamId').value;
-    const teamName = document.getElementById('editTeamName').value;
-    
-    fetch(`/api/teams/${teamId}`, {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            name: teamName
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            alert('Error: ' + data.error);
-        } else {
-            location.reload();
-        }
-    })
-    .catch(error => {
-        alert('Error: ' + error);
-    });
-}
-
-let deleteTeamId = null;
-
-function confirmDeleteTeam(teamId, teamName) {
-    deleteTeamId = teamId;
-    document.getElementById('deleteTeamName').textContent = teamName;
-    document.getElementById('deleteTeamError').classList.add('d-none');
-    new bootstrap.Modal(document.getElementById('deleteTeamModal')).show();
-}
-
-function deleteTeam() {
-    if (!deleteTeamId) return;
-    
-    fetch(`/api/teams/${deleteTeamId}`, {
-        method: 'DELETE'
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            const errorDiv = document.getElementById('deleteTeamError');
-            const errorList = document.getElementById('deleteTeamErrorList');
-            errorList.innerHTML = data.applications.map(app => `<li>${app}</li>`).join('');
-            errorDiv.classList.remove('d-none');
-        } else {
-            location.reload();
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Error deleting team');
-    });
-}
-</script>
 {% endblock %}

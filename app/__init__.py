@@ -4,14 +4,17 @@ from flask_migrate import Migrate
 import os
 import threading
 from config import Config
+from app.models import db
 
-db = SQLAlchemy()
 migrate = Migrate()
 
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    
     db.init_app(app)
     migrate.init_app(app, db)
     
@@ -20,8 +23,7 @@ def create_app(config_class=Config):
     
     # Ensure database exists
     with app.app_context():
-        if not os.path.exists(app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')):
-            db.create_all()
+        db.create_all()
         
         # Start background worker for status checks
         if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':

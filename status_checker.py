@@ -1,27 +1,23 @@
 #!/usr/bin/env python3
-import os
+import logging
+import socket
+import sqlite3
 import sys
 import time
 import json
-import socket
-import logging
-import sqlite3
-from datetime import datetime
 import requests
-from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from urllib.parse import urlparse
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('status_checker.log'),
-        logging.StreamHandler()
-    ]
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('status_checker')
 
-def check_port(host, port, timeout=2):
+def check_port(host, port, timeout=5):
+    """Check if a port is open on a host."""
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
@@ -29,122 +25,95 @@ def check_port(host, port, timeout=2):
         sock.close()
         return result == 0
     except Exception as e:
-        logger.error(f"Error checking {host}:{port} - {str(e)}")
         return False
 
 def check_webui(url, timeout=5):
+    """Check if a WebUI URL is accessible."""
     if not url:
         return None
     try:
-        response = requests.get(url, timeout=timeout)
+        response = requests.get(url, timeout=timeout, verify=False)
         return response.status_code == 200
-    except Exception as e:
-        logger.error(f"Error checking WebUI {url} - {str(e)}")
+    except Exception:
         return False
 
 def check_instance_status(instance):
-    host = instance['host']
-    port = instance['port']
-    webui_url = instance['webui_url']
-    
-    port_status = check_port(host, port) if port else None
-    webui_status = check_webui(webui_url) if webui_url else None
-    
-    status = 'unknown'
+    """Check the status of an application instance."""
     details = []
+    status = 'unknown'
     
-    if port_status is not None:
-        details.append(f"Port {'open' if port_status else 'closed'}")
+    # Check port if specified
+    if instance['port']:
+        port_status = check_port(instance['host'], instance['port'])
+        details.append(f"Port {instance['port']}: {'Open' if port_status else 'Closed'}")
         if port_status:
             status = 'running'
         else:
             status = 'stopped'
-            
-    if webui_status is not None:
-        details.append(f"WebUI {'accessible' if webui_status else 'inaccessible'}")
-        if status == 'unknown':
-            status = 'running' if webui_status else 'stopped'
-        elif status == 'running' and not webui_status:
-            status = 'error'
-            
-    return {
-        'id': instance['id'],
-        'status': status,
-        'details': details,
-        'last_checked': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    }
+    
+    # Check WebUI if specified
+    if instance['webui_url']:
+        webui_status = check_webui(instance['webui_url'])
+        details.append(f"WebUI: {'Accessible' if webui_status else 'Not accessible'}")
+        if webui_status is False:  # Only update if explicitly False (not None)
+            status = 'error' if status == 'running' else 'stopped'
+    
+    return status, ' | '.join(details)
 
-def update_instance_status(db_path, instance_id, status, details, last_checked):
+def update_instance_status(cursor, instance_id, status, details):
+    """Update the status and details of an instance in the database."""
     try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute('''
+        cursor.execute("""
             UPDATE application_instance 
             SET status = ?, details = ?, last_checked = ? 
             WHERE id = ?
-        ''', (status, json.dumps(details), last_checked, instance_id))
-        conn.commit()
-        conn.close()
+        """, (status, details, datetime.utcnow().isoformat(), instance_id))
     except Exception as e:
-        logger.error(f"Error updating database for instance {instance_id}: {str(e)}")
+        logger.error(f"Error updating instance {instance_id}: {e}")
 
-def get_instances(db_path):
-    try:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, host, port, webui_url 
-            FROM application_instance
-        ''')
-        instances = [dict(row) for row in cursor.fetchall()]
-        conn.close()
-        return instances
-    except Exception as e:
-        logger.error(f"Error fetching instances: {str(e)}")
-        return []
+def get_instances(cursor):
+    """Get all application instances from the database."""
+    cursor.execute("""
+        SELECT id, host, port, webui_url, db_host 
+        FROM application_instance
+    """)
+    columns = [col[0] for col in cursor.description]
+    return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
 def main():
     if len(sys.argv) != 2:
-        print("Usage: python status_checker.py /path/to/app.db")
-        sys.exit(1)
-        
-    db_path = sys.argv[1]
-    if not os.path.exists(db_path):
-        print(f"Database file not found: {db_path}")
+        print("Usage: status_checker.py <database_path>")
         sys.exit(1)
     
+    db_path = sys.argv[1]
     logger.info("Status checker service started")
     
     while True:
         try:
-            instances = get_instances(db_path)
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            instances = get_instances(cursor)
             logger.info(f"Checking status for {len(instances)} instances")
             
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                futures = []
-                for instance in instances:
-                    futures.append(executor.submit(check_instance_status, instance))
-                
-                for instance, future in zip(instances, futures):
-                    try:
-                        result = future.result()
-                        update_instance_status(
-                            db_path,
-                            result['id'],
-                            result['status'],
-                            result['details'],
-                            result['last_checked']
-                        )
-                    except Exception as e:
-                        logger.error(f"Error processing instance {instance['id']}: {str(e)}")
+            for instance in instances:
+                try:
+                    status, details = check_instance_status(instance)
+                    update_instance_status(cursor, instance['id'], status, details)
+                except Exception as e:
+                    logger.error(f"Error checking instance {instance['id']}: {e}")
             
+            conn.commit()
             logger.info("Status check complete")
-            time.sleep(30)  # Wait 30 seconds before next check
             
         except Exception as e:
-            logger.error(f"Main loop error: {str(e)}")
-            time.sleep(5)  # Wait 5 seconds on error before retrying
+            logger.error(f"Database error: {e}")
+        
+        finally:
+            if 'conn' in locals():
+                conn.close()
+        
+        time.sleep(30)  # Wait 30 seconds before next check
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
