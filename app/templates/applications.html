@@ -192,6 +192,135 @@
 </div>
 
 <script>
+function filterTable(inputId, tableId) {
+    const input = document.getElementById(inputId);
+    const filter = input.value.toLowerCase();
+    const table = document.getElementById(tableId);
+    const rows = table.getElementsByTagName('tr');
+
+    for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row.classList.contains('instances-row')) {  // Skip instance rows
+            const cells = row.getElementsByTagName('td');
+            let found = false;
+            
+            for (let j = 0; j < cells.length; j++) {
+                const cell = cells[j];
+                if (cell) {
+                    const text = cell.textContent || cell.innerText;
+                    if (text.toLowerCase().indexOf(filter) > -1) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Show/hide the row and its instances
+            const appId = row.getAttribute('data-app-id');
+            const instancesRow = appId ? document.querySelector(`.instances-row[data-parent-id="${appId}"]`) : null;
+            
+            if (found) {
+                row.style.display = '';
+                if (instancesRow && !instancesRow.classList.contains('d-none')) {
+                    instancesRow.style.display = '';
+                }
+            } else {
+                row.style.display = 'none';
+                if (instancesRow) {
+                    instancesRow.style.display = 'none';
+                }
+            }
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    });
+    
+    // Add event listeners for search inputs
+    const activeSearchInput = document.getElementById('activeSearchInput');
+    const completedSearchInput = document.getElementById('completedSearchInput');
+    
+    if (activeSearchInput) {
+        activeSearchInput.addEventListener('keyup', function() {
+            filterTable('activeSearchInput', 'activeTable');
+        });
+    }
+    
+    if (completedSearchInput) {
+        completedSearchInput.addEventListener('keyup', function() {
+            filterTable('completedSearchInput', 'completedTable');
+        });
+    }
+    
+    // Check status of visible instances every 30 seconds
+    setInterval(() => {
+        const visibleInstances = document.querySelectorAll('.instances-row:not(.d-none) [data-instance-id]');
+        visibleInstances.forEach(instance => {
+            checkInstanceStatus(instance.dataset.instanceId);
+        });
+    }, 30000);
+});
+
+function toggleInstances(appId) {
+    const row = document.querySelector(`tr[data-app-id="${appId}"]`);
+    const instancesRow = document.querySelector(`.instances-row[data-parent-id="${appId}"]`);
+    const chevron = row.querySelector('.toggle-instances i');
+    
+    if (!instancesRow) return;
+    
+    instancesRow.classList.toggle('d-none');
+    chevron.classList.toggle('bi-chevron-right');
+    chevron.classList.toggle('bi-chevron-down');
+    
+    if (!instancesRow.classList.contains('d-none')) {
+        // Check status when expanding
+        const instances = instancesRow.querySelectorAll('[data-instance-id]');
+        instances.forEach(instance => {
+            const instanceId = instance.dataset.instanceId;
+            checkInstanceStatus(instanceId);
+        });
+    }
+}
+
+function checkInstanceStatus(instanceId) {
+    const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
+    const statusBadge = row.querySelector('.badge');
+    statusBadge.className = 'badge bg-warning';
+    statusBadge.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Checking...';
+
+    fetch(`/check_instance_status/${instanceId}`)
+        .then(response => response.json())
+        .then(data => {
+            let badgeClass = data.is_running ? 'bg-success' : 'bg-danger';
+            let status = data.is_running ? 'Running' : 'Stopped';
+            
+            statusBadge.className = `badge ${badgeClass}`;
+            statusBadge.innerHTML = status;
+            
+            // Update last checked time
+            const timeCell = row.querySelector('td:nth-child(4) small');
+            timeCell.textContent = new Date().toLocaleString();
+            
+            // Update tooltip with details if available
+            if (data.details && data.details.length > 0) {
+                statusBadge.setAttribute('data-bs-toggle', 'tooltip');
+                statusBadge.setAttribute('data-bs-placement', 'top');
+                statusBadge.setAttribute('title', data.details.join('\n'));
+                new bootstrap.Tooltip(statusBadge);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            statusBadge.className = 'badge bg-danger';
+            statusBadge.innerHTML = 'Error';
+        });
+}
+
 function markCompleted(id) {
     if (!confirm('Are you sure you want to mark this application as completed?')) {
         return;
@@ -672,103 +801,8 @@ $(document).ready(function() {
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl)
     });
-    
-    // Initialize DataTables with search
-    var activeTable = $('#activeTable').DataTable({
-        pageLength: 25,
-        order: [[0, 'asc']],
-        dom: '<"d-flex justify-content-between align-items-center mb-3"<"d-flex align-items-center"l><"d-flex align-items-center"f>>rtip',
-        language: {
-            search: "_INPUT_",
-            searchPlaceholder: "Search applications..."
-        }
-    });
-    
-    var completedTable = $('#completedTable').DataTable({
-        pageLength: 25,
-        order: [[2, 'desc']],  // Sort by completion date
-        dom: '<"d-flex justify-content-between align-items-center mb-3"<"d-flex align-items-center"l><"d-flex align-items-center"f>>rtip',
-        language: {
-            search: "_INPUT_",
-            searchPlaceholder: "Search completed applications..."
-        }
-    });
-    
-    // Hide default DataTables search since we have our custom one
-    $('.dataTables_filter').hide();
-    
-    // Bind custom search inputs to DataTables search
-    $('#activeSearchInput').on('keyup', function() {
-        activeTable.search(this.value).draw();
-    });
-    
-    $('#completedSearchInput').on('keyup', function() {
-        completedTable.search(this.value).draw();
-    });
-    
-    // Check status of visible instances every 30 seconds
-    setInterval(() => {
-        const visibleInstances = document.querySelectorAll('.instances-row:not(.d-none) [data-instance-id]');
-        visibleInstances.forEach(instance => {
-            checkInstanceStatus(instance.dataset.instanceId);
-        });
-    }, 30000);
 });
 
-function toggleInstances(appId) {
-    const row = document.querySelector(`tr[data-app-id="${appId}"]`);
-    const instancesRow = document.querySelector(`.instances-row[data-parent-id="${appId}"]`);
-    const chevron = row.querySelector('.toggle-instances i');
-    
-    if (!instancesRow) return;
-    
-    instancesRow.classList.toggle('d-none');
-    chevron.classList.toggle('bi-chevron-right');
-    chevron.classList.toggle('bi-chevron-down');
-    
-    if (!instancesRow.classList.contains('d-none')) {
-        // Check status when expanding
-        const instances = instancesRow.querySelectorAll('[data-instance-id]');
-        instances.forEach(instance => {
-            const instanceId = instance.dataset.instanceId;
-            checkInstanceStatus(instanceId);
-        });
-    }
-}
-
-function checkInstanceStatus(instanceId) {
-    const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
-    const statusBadge = row.querySelector('.badge');
-    statusBadge.className = 'badge bg-warning';
-    statusBadge.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Checking...';
-
-    fetch(`/check_instance_status/${instanceId}`)
-        .then(response => response.json())
-        .then(data => {
-            let badgeClass = data.is_running ? 'bg-success' : 'bg-danger';
-            let status = data.is_running ? 'Running' : 'Stopped';
-            
-            statusBadge.className = `badge ${badgeClass}`;
-            statusBadge.innerHTML = status;
-            
-            // Update last checked time
-            const timeCell = row.querySelector('td:nth-child(4) small');
-            timeCell.textContent = new Date().toLocaleString();
-            
-            // Update tooltip with details if available
-            if (data.details && data.details.length > 0) {
-                statusBadge.setAttribute('data-bs-toggle', 'tooltip');
-                statusBadge.setAttribute('data-bs-placement', 'top');
-                statusBadge.setAttribute('title', data.details.join('\n'));
-                new bootstrap.Tooltip(statusBadge);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            statusBadge.className = 'badge bg-danger';
-            statusBadge.innerHTML = 'Error';
-        });
-}
 </script>
 
 <style>
