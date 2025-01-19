@@ -189,44 +189,45 @@ def import_data():
         db = get_db()
         duplicates = []
         
-        # Check for duplicates first
+        # First pass: Check for host conflicts (same host, different app/team)
+        host_conflicts = {}
         for row in rows:
             host = row.get('host', '').strip()
             if not host:
                 continue
-                
+            
             existing = db.systems.find_one({'host': host})
             if existing:
-                # Get existing system details
                 app = db.applications.find_one({'_id': ObjectId(existing['application_id'])})
-                team = db.teams.find_one({'_id': ObjectId(app['team_id'])}) if app else None
-                
-                duplicates.append({
-                    'existing': {
-                        'host': host,
-                        'name': existing['name'],
-                        'team': team['name'] if team else 'Unknown',
-                        'application': app['name'] if app else 'Unknown',
-                        'port': existing.get('port'),
-                        'webui_url': existing.get('webui_url')
-                    },
-                    'new': {
-                        'host': host,
-                        'name': row.get('name'),
-                        'team': row.get('team'),
-                        'port': row.get('port'),
-                        'webui_url': row.get('webui_url')
-                    }
-                })
+                if app and (app['name'] != row.get('name') or str(app.get('team_id')) != str(team_id)):
+                    if host not in host_conflicts:
+                        team = db.teams.find_one({'_id': ObjectId(app['team_id'])}) if app else None
+                        host_conflicts[host] = {
+                            'existing': {
+                                'host': host,
+                                'name': existing['name'],
+                                'team': team['name'] if team else 'Unknown',
+                                'application': app['name'] if app else 'Unknown',
+                                'port': existing.get('port'),
+                                'webui_url': existing.get('webui_url')
+                            },
+                            'new': {
+                                'host': host,
+                                'name': row.get('name'),
+                                'team': row.get('team'),
+                                'port': row.get('port'),
+                                'webui_url': row.get('webui_url')
+                            }
+                        }
         
-        if duplicates:
+        if host_conflicts:
             return jsonify({
                 'success': False,
                 'error': 'duplicate_found',
-                'duplicates': duplicates
+                'duplicates': list(host_conflicts.values())
             })
         
-        # No duplicates, proceed with import
+        # No conflicts, proceed with import
         for row in rows:
             team_name = row.get('team', 'Default Team')
             team = db.teams.find_one_and_update(
@@ -242,6 +243,7 @@ def import_data():
             if not app_name or not host:
                 continue
                 
+            # Update or create application
             app_data = {
                 'name': app_name,
                 'team_id': str(team_id),
@@ -257,6 +259,7 @@ def import_data():
             )
             app_id = app['_id']
             
+            # Update or create system
             system_data = {
                 'name': app_name,
                 'application_id': str(app_id),
@@ -266,7 +269,12 @@ def import_data():
                 'status': 'unknown',
                 'last_checked': datetime.utcnow()
             }
-            db.systems.insert_one(system_data)
+            
+            db.systems.find_one_and_update(
+                {'host': host},
+                {'$set': system_data},
+                upsert=True
+            )
         
         return jsonify({'success': True})
         

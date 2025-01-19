@@ -546,29 +546,51 @@ function toggleApplication(appId) {
 }
 
 function deleteTeam(teamId) {
-    if (confirm('Are you sure you want to delete this team? This will also delete all associated applications and systems.')) {
+    if (confirm('Are you sure you want to delete this team?')) {
         fetch(`/api/teams/${teamId}`, {
             method: 'DELETE'
-        }).then(response => {
-            if (response.ok) {
-                location.reload();
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', 'Team deleted successfully');
+                // Refresh only the teams tab content
+                const teamsTab = document.getElementById('teams-tab');
+                if (teamsTab) {
+                    teamsTab.click();
+                }
             } else {
-                alert('Failed to delete team');
+                showAlert('danger', 'Failed to delete team: ' + data.error);
             }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('danger', 'Failed to delete team');
         });
     }
 }
 
 function deleteApplication(appId) {
-    if (confirm('Are you sure you want to delete this application? This will also delete all associated systems.')) {
-        fetch(`/api/applications/delete/${appId}`, {
+    if (confirm('Are you sure you want to delete this application?')) {
+        fetch(`/api/applications/${appId}`, {
             method: 'DELETE'
-        }).then(response => {
-            if (response.ok) {
-                location.reload();
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', 'Application deleted successfully');
+                // Refresh only the applications tab content
+                const appsTab = document.getElementById('applications-tab');
+                if (appsTab) {
+                    appsTab.click();
+                }
             } else {
-                alert('Failed to delete application');
+                showAlert('danger', 'Failed to delete application: ' + data.error);
             }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('danger', 'Failed to delete application');
         });
     }
 }
