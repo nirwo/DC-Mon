@@ -82,6 +82,13 @@
                                             title="Delete">
                                         <i class="bi bi-trash"></i>
                                     </button>
+                                    <button class="btn btn-sm btn-outline-primary" 
+                                            onclick="editSystem('{{ instance.id }}')"
+                                            data-bs-toggle="tooltip" 
+                                            data-bs-placement="top" 
+                                            title="Edit">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
                                 </div>
                             </td>
                         </tr>
@@ -275,6 +282,61 @@ function confirmDelete(appId, instanceId) {
             alert('Error deleting system');
         });
     }
+}
+
+function editSystem(systemId) {
+    const row = document.querySelector(`[data-instance-id="${systemId}"]`);
+    const nameElement = row.querySelector('td:nth-child(2)');
+    const teamElement = row.querySelector('td:nth-child(1)');
+    
+    const currentName = nameElement.textContent;
+    const currentTeam = teamElement.textContent;
+    
+    const newName = prompt('Enter new name:', currentName);
+    if (!newName) return;
+    
+    const newTeam = prompt('Enter new team:', currentTeam);
+    if (!newTeam) return;
+    
+    fetch('/update_system', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            id: systemId,
+            name: newName,
+            team: newTeam
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            nameElement.textContent = newName;
+            teamElement.textContent = newTeam;
+            showAlert('success', 'System updated successfully');
+        } else {
+            showAlert('danger', 'Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('danger', 'Error updating system');
+    });
+}
+
+function showAlert(type, message) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    document.querySelector('.container').prepend(alertDiv);
+    
+    setTimeout(() => {
+        alertDiv.remove();
+    }, 5000);
 }
 </script>
 

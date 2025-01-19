@@ -769,3 +769,30 @@ def delete_all_applications():
         db.session.rollback()
         main.logger.error(f"Error deleting all applications: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@main.route('/update_system', methods=['POST'])
+def update_system():
+    try:
+        data = request.get_json()
+        system_id = data.get('id')
+        new_name = data.get('name')
+        new_team = data.get('team')
+        
+        instance = ApplicationInstance.query.get_or_404(system_id)
+        instance.host = new_name
+        
+        # Update team if it exists, create if it doesn't
+        team = Team.query.filter_by(name=new_team).first()
+        if not team:
+            team = Team(name=new_team)
+            db.session.add(team)
+        
+        application = instance.application
+        application.team_id = team.id
+        
+        db.session.commit()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        db.session.rollback()
+        main.logger.error(f"Error updating system: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
