@@ -59,7 +59,7 @@ class Application:
 class ApplicationInstance:
     def __init__(self, application_id, host, port=None, webui_url=None, db_host=None, _id=None):
         self._id = ObjectId(_id) if _id else ObjectId()
-        self.application_id = ObjectId(application_id) if application_id else None
+        self.application_id = application_id  
         self.host = host
         self.port = port
         self.webui_url = webui_url
@@ -73,8 +73,11 @@ class ApplicationInstance:
     def from_dict(cls, data):
         if not data:
             return None
+        app_id = data.get('application_id')
+        if isinstance(app_id, ObjectId):
+            app_id = str(app_id)
         instance = cls(
-            application_id=data.get('application_id'),
+            application_id=app_id,
             host=data.get('host'),
             port=data.get('port'),
             webui_url=data.get('webui_url'),
@@ -94,7 +97,7 @@ class ApplicationInstance:
     def to_dict(self):
         return {
             '_id': str(self._id),
-            'application_id': str(self.application_id) if self.application_id else None,
+            'application_id': self.application_id,
             'host': self.host,
             'port': self.port,
             'webui_url': self.webui_url,

@@ -475,9 +475,11 @@ def add_instance(app_id):
 def list_instances(app_id):
     try:
         db = get_db()
-        instances = [ApplicationInstance.from_dict(inst) for inst in db.application_instances.find({"application_id": ObjectId(app_id)})]
+        app_oid = ObjectId(app_id)
+        instances = [ApplicationInstance.from_dict(inst) for inst in db.application_instances.find({"application_id": app_oid})]
         return jsonify([inst.to_dict() for inst in instances])
     except Exception as e:
+        logger.error(f"Error listing instances: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @main.route('/api/applications', methods=['GET'])
