@@ -10,12 +10,18 @@ services:
       - FLASK_ENV=development
       - MONGODB_URI=mongodb://mongo:27017/shutdown_manager
       - PYTHONPATH=/app
+      - POSTGRES_DB=dcmon
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_HOST=postgres
     volumes:
       - .:/app
     depends_on:
       mongo:
         condition: service_healthy
-    command: python -m flask run --host=0.0.0.0 --port=5001
+      postgres:
+        condition: service_healthy
+    command: bash -c "python app/migrate.py && python -m flask run --host=0.0.0.0 --port=5001"
 
   mongo:
     image: mongo:latest
@@ -30,5 +36,23 @@ services:
       retries: 5
       start_period: 5s
 
+  postgres:
+    image: postgres:13
+    environment:
+      - POSTGRES_DB=dcmon
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
 volumes:
   mongodb_data:
+  postgres_data:
