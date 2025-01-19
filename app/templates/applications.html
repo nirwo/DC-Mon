@@ -615,121 +615,99 @@ function saveEditApplication() {
     });
 }
 
-function checkStatus(id) {
-    // Show loading state
-    const row = document.querySelector(`[data-app-id="${id}"]`);
-    const statusBadges = row.querySelectorAll('.badge');
-    statusBadges.forEach(badge => {
-        badge.className = 'badge bg-warning';
-        badge.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Checking...';
-    });
-
-    fetch(`/check_status/${id}`)
-        .then(response => response.json())
-        .then(data => {
-            data.results.forEach(result => {
-                const instanceRow = row.querySelector(`[data-host="${result.host}"]`);
-                const badge = instanceRow.querySelector('.badge');
-                const statusDiv = instanceRow.querySelector('.status-message') || document.createElement('div');
-                statusDiv.className = 'status-message small mt-1';
-                
-                switch(result.status) {
-                    case 'running':
-                        badge.className = 'badge bg-success';
-                        badge.innerHTML = '<i class="bi bi-check-circle me-1"></i>Running';
-                        statusDiv.className += ' text-success';
-                        statusDiv.innerHTML = result.message || 'Service is running normally';
-                        break;
-                    case 'stopped':
-                        badge.className = 'badge bg-danger';
-                        badge.innerHTML = '<i class="bi bi-x-circle me-1"></i>Stopped';
-                        statusDiv.className += ' text-danger';
-                        statusDiv.innerHTML = result.message || 'Service is not running';
-                        break;
-                    case 'in_progress':
-                        badge.className = 'badge bg-info';
-                        badge.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>In Progress';
-                        statusDiv.className += ' text-info';
-                        statusDiv.innerHTML = result.message || 'Operation in progress';
-                        break;
-                    case 'unknown':
-                        badge.className = 'badge bg-secondary';
-                        badge.innerHTML = '<i class="bi bi-question-circle me-1"></i>Unknown';
-                        statusDiv.className += ' text-secondary';
-                        statusDiv.innerHTML = result.message || 'Unable to determine status';
-                        break;
-                    case 'error':
-                        badge.className = 'badge bg-danger';
-                        badge.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Error';
-                        statusDiv.className += ' text-danger';
-                        statusDiv.innerHTML = result.message || 'An error occurred while checking status';
-                        break;
-                }
-                
-                // Add status message if not already present
-                if (!instanceRow.querySelector('.status-message')) {
-                    instanceRow.appendChild(statusDiv);
-                }
-            });
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            statusBadges.forEach(badge => {
-                badge.className = 'badge bg-danger';
-                badge.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Error';
-                
-                const statusDiv = badge.closest('.instance-row').querySelector('.status-message') || document.createElement('div');
-                statusDiv.className = 'status-message small mt-1 text-danger';
-                statusDiv.innerHTML = error.message || 'Failed to check status';
-                
-                if (!badge.closest('.instance-row').querySelector('.status-message')) {
-                    badge.closest('.instance-row').appendChild(statusDiv);
-                }
-            });
-        });
-}
-
-function confirmShutdown(id) {
-    if (confirm('Are you sure you want to shutdown this application and all its instances?')) {
-        fetch(`/shutdown_app/${id}`, { 
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        })
+function checkStatus(appId) {
+    const row = document.querySelector(`tr[data-app-id="${appId}"]`);
+    const statusBadge = row.querySelector('.badge');
+    const checkButton = row.querySelector('button[onclick*="checkStatus"]');
+    
+    // Disable button and show loading
+    checkButton.disabled = true;
+    statusBadge.className = 'badge bg-warning me-2';
+    statusBadge.textContent = 'Checking...';
+    
+    fetch(`/check_status/${appId}`)
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                // Update status badges to "In Progress"
-                const row = document.querySelector(`[data-app-id="${id}"]`);
-                const statusBadges = row.querySelectorAll('.badge');
-                statusBadges.forEach(badge => {
-                    badge.className = 'badge bg-info';
-                    badge.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>In Progress';
+                statusBadge.textContent = data.app_status;
+                statusBadge.className = `badge me-2 ${data.app_status === 'UP' ? 'bg-success' : 'bg-danger'}`;
+                
+                // Also update instance statuses if they are visible
+                const instanceRows = document.querySelectorAll(`.instance-row[data-parent-id="${appId}"]`);
+                instanceRows.forEach(instanceRow => {
+                    if (instanceRow.style.display !== 'none') {
+                        const instanceId = instanceRow.querySelector('[data-instance-id]')?.dataset.instanceId;
+                        if (instanceId) {
+                            checkInstanceStatus(instanceId);
+                        }
+                    }
                 });
             } else {
-                alert(data.message || 'Failed to initiate shutdown');
+                statusBadge.textContent = 'Error';
+                statusBadge.className = 'badge bg-danger me-2';
+                showAlert('danger', 'Error checking status: ' + data.message);
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('Failed to shutdown application');
+            statusBadge.textContent = 'Error';
+            statusBadge.className = 'badge bg-danger me-2';
+            showAlert('danger', 'Error checking status');
+        })
+        .finally(() => {
+            checkButton.disabled = false;
         });
-    }
 }
 
-function viewShutdownSequence(id) {
-    fetch(`/shutdown_sequence/${id}`)
+function checkInstanceStatus(instanceId) {
+    const row = document.querySelector(`[data-instance-id="${instanceId}"]`).closest('tr');
+    const statusBadge = row.querySelector('.badge');
+    
+    statusBadge.className = 'badge bg-warning';
+    statusBadge.textContent = 'Checking...';
+    
+    fetch(`/check_instance_status/${instanceId}`)
         .then(response => response.json())
         .then(data => {
-            // TODO: Show shutdown sequence in a modal
-            console.log(data);
+            if (data.status === 'success') {
+                statusBadge.textContent = data.instance_status;
+                statusBadge.className = `badge ${data.instance_status === 'UP' ? 'bg-success' : 'bg-danger'}`;
+            } else {
+                statusBadge.textContent = 'Error';
+                statusBadge.className = 'badge bg-danger';
+                showAlert('danger', 'Error checking instance status: ' + data.message);
+            }
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('Failed to get shutdown sequence');
+            statusBadge.textContent = 'Error';
+            statusBadge.className = 'badge bg-danger';
+            showAlert('danger', 'Error checking instance status');
         });
 }
+
+// Start periodic status checks for visible instances
+document.addEventListener('DOMContentLoaded', function() {
+    let statusCheckInterval = setInterval(() => {
+        // Check visible applications
+        const visibleApps = document.querySelectorAll('tr[data-app-id]:not([style*="display: none"])');
+        visibleApps.forEach(row => {
+            const appId = row.dataset.appId;
+            checkStatus(appId);
+        });
+        
+        // Check visible instances
+        const visibleInstances = document.querySelectorAll('.instance-row[style*="display: table-row"] [data-instance-id]');
+        visibleInstances.forEach(instance => {
+            checkInstanceStatus(instance.dataset.instanceId);
+        });
+    }, 30000);
+    
+    // Clean up interval on page unload
+    window.addEventListener('beforeunload', () => {
+        clearInterval(statusCheckInterval);
+    });
+});
 
 function confirmDeleteApplication(id, name) {
     if (confirm(`Are you sure you want to delete ${name}?`)) {
