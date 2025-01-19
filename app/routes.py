@@ -56,12 +56,15 @@ def index():
             
         # Get systems
         systems = []
-        for system in db.systems.find({'application_id': str(app._id)}):
+        for system_data in db.systems.find({'application_id': str(app._id)}):
+            system = System.from_dict(system_data)
             systems.append({
-                'id': str(system['_id']),
-                'name': system['name'],
-                'status': system.get('status', 'unknown'),
-                'last_checked': system.get('last_checked')
+                'id': str(system._id),
+                'name': system.name,
+                'status': system.status,
+                'last_checked': system.last_checked,
+                'port': system.port,
+                'webui_url': system.webui_url
             })
         app_dict['systems'] = systems
         
