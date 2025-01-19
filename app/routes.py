@@ -175,8 +175,53 @@ def import_data():
         return jsonify({'error': 'No file selected'}), 400
         
     try:
-        content = file.read()
-        data = json.loads(content)
+        content = file.stream.read().decode('utf-8')
+        
+        # Try parsing as JSON first
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            # If not JSON, try CSV
+            try:
+                reader = csv.DictReader(content.splitlines())
+                data = {'teams': [], 'applications': [], 'systems': []}
+                team_map = {}
+                app_map = {}
+                
+                for row in reader:
+                    team_name = row.get('team', '').strip()
+                    app_name = row.get('name', '').strip()
+                    host = row.get('host', '').strip()
+                    
+                    if not all([team_name, app_name, host]):
+                        continue
+                    
+                    # Add team if new
+                    if team_name not in team_map:
+                        team = Team(name=team_name)
+                        data['teams'].append(team.to_dict())
+                        team_map[team_name] = True
+                    
+                    # Add application if new
+                    app_key = f"{team_name}:{app_name}"
+                    if app_key not in app_map:
+                        app = Application(name=app_name, team_id=None)
+                        data['applications'].append({
+                            'name': app_name,
+                            'team': team_name,
+                            'state': 'notStarted',
+                            'enabled': False
+                        })
+                        app_map[app_key] = True
+                    
+                    # Add system
+                    data['systems'].append({
+                        'name': host,
+                        'application': app_name
+                    })
+            except Exception as e:
+                return jsonify({'error': f'Invalid CSV format: {str(e)}'}), 400
+        
         db = get_db()
         
         # Import teams
@@ -207,14 +252,12 @@ def import_data():
             app_id = app_map.get(app_name)
             if app_id:
                 system = System(
-                    name=system_data.get('host', system_data.get('name')),
+                    name=system_data.get('name', system_data.get('host')),
                     application_id=app_id,
                     status='stopped',
                     last_checked=datetime.utcnow()
                 )
                 result = db.systems.insert_one(system.to_dict())
-                
-                # Update application's systems list
                 db.applications.update_one(
                     {'_id': ObjectId(app_id)},
                     {'$push': {'systems': str(result.inserted_id)}}
@@ -656,7 +699,7 @@ def delete_team(team_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@main.route('/api/applications/<app_id>', methods=['DELETE'])
+@main.route('/api/applications/delete/<app_id>', methods=['DELETE'])
 def delete_application(app_id):
     db = get_db()
     try:

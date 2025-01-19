@@ -11,12 +11,7 @@
                     <h5 class="mb-0">Import Data</h5>
                 </div>
                 <div class="card-body">
-                    <form onsubmit="event.preventDefault(); importCSV();">
-                        <div class="mb-3">
-                            <input type="file" class="form-control" id="csvFile" accept=".csv,.json">
-                        </div>
-                        <button type="submit" class="btn btn-primary">Import</button>
-                    </form>
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal">Import</button>
                 </div>
             </div>
         </div>
@@ -256,6 +251,39 @@
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="importModal" tabindex="-1" aria-labelledby="importModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="importModalLabel">Import Data</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="importForm">
+                    <div class="mb-3">
+                        <label for="importFile" class="form-label">Choose File (JSON or CSV)</label>
+                        <input type="file" class="form-control" id="importFile" accept=".json,.csv" required>
+                    </div>
+                    <div class="alert alert-info">
+                        <h6>CSV Format:</h6>
+                        <p>Required columns: team, name, host</p>
+                        <p>Example:</p>
+                        <pre>team,name,host
+DevOps,Web Server,web-server-1
+DevOps,Web Server,web-server-2
+Infrastructure,Database,db-primary</pre>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="importData()">Import</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -329,7 +357,7 @@ function deleteTeam(teamId) {
 
 function deleteApplication(appId) {
     if (confirm('Are you sure you want to delete this application? This will also delete all associated systems.')) {
-        fetch(`/api/applications/${appId}`, {
+        fetch(`/api/applications/delete/${appId}`, {
             method: 'DELETE'
         }).then(response => {
             if (response.ok) {
@@ -355,11 +383,11 @@ function deleteSystem(systemId) {
     }
 }
 
-function importCSV() {
-    const fileInput = document.getElementById('csvFile');
+function importData() {
+    const fileInput = document.getElementById('importFile');
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
-
+    
     fetch('/import_data', {
         method: 'POST',
         body: formData
@@ -367,14 +395,14 @@ function importCSV() {
     .then(response => response.json())
     .then(data => {
         if (data.error) {
-            alert('Error: ' + data.error);
+            alert('Import failed: ' + data.error);
         } else {
-            alert('Import successful');
+            alert('Data imported successfully');
             location.reload();
         }
     })
     .catch(error => {
-        alert('Error: ' + error);
+        alert('Import failed: ' + error);
     });
 }
 
