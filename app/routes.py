@@ -5,6 +5,11 @@ from app.models import db, Team, Application, ApplicationInstance
 from sqlalchemy import desc
 import csv
 import requests
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 main = Blueprint('main', __name__)
 
@@ -23,6 +28,60 @@ def teams():
 def systems():
     instances = ApplicationInstance.query.join(Application).join(Team).order_by(Team.name, Application.name).all()
     return render_template('systems.html', instances=instances)
+
+@main.route('/check_all_status')
+def check_all_status():
+    try:
+        logger.info("Starting check_all_status")
+        instances = ApplicationInstance.query.all()
+        
+        for instance in instances:
+            try:
+                instance.status = 'checking'
+                instance.details = 'Status check initiated'
+                instance.last_checked = datetime.utcnow()
+                logger.info(f"Updated instance {instance.id} status to checking")
+            except Exception as e:
+                logger.error(f"Error updating instance {instance.id}: {str(e)}")
+                continue
+        
+        try:
+            db.session.commit()
+            logger.info("Successfully committed status updates")
+        except Exception as e:
+            logger.error(f"Error committing status updates: {str(e)}")
+            db.session.rollback()
+            return jsonify({'status': 'error', 'message': 'Database error'}), 500
+        
+        return jsonify({'status': 'success', 'message': 'Status check initiated'})
+        
+    except Exception as e:
+        logger.error(f"Error in check_all_status: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@main.route('/check_status/<int:instance_id>')
+def check_status(instance_id):
+    try:
+        logger.info(f"Starting check_status for instance {instance_id}")
+        instance = ApplicationInstance.query.get_or_404(instance_id)
+        
+        instance.status = 'checking'
+        instance.details = 'Status check initiated'
+        instance.last_checked = datetime.utcnow()
+        
+        try:
+            db.session.commit()
+            logger.info(f"Successfully updated instance {instance_id}")
+        except Exception as e:
+            logger.error(f"Error committing status update: {str(e)}")
+            db.session.rollback()
+            return jsonify({'status': 'error', 'message': 'Database error'}), 500
+        
+        return jsonify({'status': 'success', 'message': 'Status check initiated'})
+        
+    except Exception as e:
+        logger.error(f"Error in check_status: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @main.route('/import_data', methods=['POST'])
 def import_data():
@@ -100,12 +159,9 @@ def import_data():
                 
             app = Application.query.filter_by(name=app_data['name'], team_id=team.id).first()
             if not app:
-                app = Application(
-                    name=app_data['name'],
-                    team_id=team.id,
-                    shutdown_order=app_data.get('shutdown_order')
-                )
+                app = Application(name=app_data['name'], team_id=team.id)
                 db.session.add(app)
+                db.session.flush()
             
             for instance_data in app_data.get('instances', []):
                 if not isinstance(instance_data, dict) or 'host' not in instance_data:
@@ -135,40 +191,12 @@ def import_data():
         return jsonify({'status': 'success', 'message': 'Data imported successfully'})
         
     except Exception as e:
+        logger.error(f"Error in import_data: {str(e)}")
         db.session.rollback()
         return jsonify({
             'status': 'error',
             'message': f'Import failed: {str(e)}'
         }), 500
-
-@main.route('/check_all_status')
-def check_all_status():
-    try:
-        instances = ApplicationInstance.query.all()
-        for instance in instances:
-            instance.status = 'checking'
-            instance.details = 'Status check initiated'
-            instance.last_checked = datetime.utcnow()
-        db.session.commit()
-        
-        return jsonify({'status': 'success', 'message': 'Status check initiated'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@main.route('/check_status/<int:instance_id>')
-def check_status(instance_id):
-    try:
-        instance = ApplicationInstance.query.get_or_404(instance_id)
-        instance.status = 'checking'
-        instance.details = 'Status check initiated'
-        instance.last_checked = datetime.utcnow()
-        db.session.commit()
-        
-        return jsonify({'status': 'success', 'message': 'Status check initiated'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @main.route('/delete_instance/<int:instance_id>', methods=['POST'])
 def delete_instance(instance_id):
@@ -188,6 +216,7 @@ def delete_instance(instance_id):
         db.session.commit()
         return jsonify({'status': 'success'})
     except Exception as e:
+        logger.error(f"Error in delete_instance: {str(e)}")
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -202,6 +231,7 @@ def delete_application(app_id):
         db.session.commit()
         return jsonify({'status': 'success'})
     except Exception as e:
+        logger.error(f"Error in delete_application: {str(e)}")
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -223,6 +253,7 @@ def update_instance_url(instance_id):
             }
         })
     except Exception as e:
+        logger.error(f"Error in update_instance_url: {str(e)}")
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -242,6 +273,7 @@ def update_system():
         if not team:
             team = Team(name=new_team)
             db.session.add(team)
+            db.session.flush()
         
         application = instance.application
         application.team_id = team.id
@@ -249,6 +281,7 @@ def update_system():
         db.session.commit()
         return jsonify({'status': 'success'})
     except Exception as e:
+        logger.error(f"Error in update_system: {str(e)}")
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -279,6 +312,7 @@ def get_all_systems():
             'systems': systems
         })
     except Exception as e:
+        logger.error(f"Error in get_all_systems: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @main.route('/update_application', methods=['POST'])
@@ -288,7 +322,6 @@ def update_application():
         app_id = data.get('id')
         new_name = data.get('name')
         new_team = data.get('team')
-        new_dependencies = data.get('dependencies', [])
         instances = data.get('instances', [])
         
         # Get application
@@ -304,7 +337,6 @@ def update_application():
         # Update application
         application.name = new_name
         application.team_id = team.id
-        application.dependencies = new_dependencies
         
         # Update instances if provided
         if instances:
@@ -338,5 +370,6 @@ def update_application():
         db.session.commit()
         return jsonify({'status': 'success'})
     except Exception as e:
+        logger.error(f"Error in update_application: {str(e)}")
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500

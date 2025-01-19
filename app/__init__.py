@@ -12,7 +12,9 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    db_path = os.path.join(os.path.dirname(base_dir), 'instance', 'app.db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     db.init_app(app)
@@ -23,6 +25,8 @@ def create_app(config_class=Config):
     
     # Ensure database exists
     with app.app_context():
+        instance_dir = os.path.dirname(db_path)
+        os.makedirs(instance_dir, exist_ok=True)
         db.create_all()
         
         # Start background worker for status checks

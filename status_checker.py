@@ -6,8 +6,11 @@ import sys
 import time
 import json
 import requests
+import os
 from datetime import datetime
 from urllib.parse import urlparse
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
 
 # Configure logging
 logging.basicConfig(
@@ -69,7 +72,7 @@ def update_instance_status(cursor, instance_id, status, details):
             WHERE id = ?
         """, (status, details, datetime.utcnow().isoformat(), instance_id))
     except Exception as e:
-        logger.error(f"Error updating instance {instance_id}: {e}")
+        logger.error(f"Error updating instance {instance_id}: {str(e)}")
 
 def get_instances(cursor):
     """Get all application instances from the database."""
@@ -85,33 +88,74 @@ def main():
         print("Usage: status_checker.py <database_path>")
         sys.exit(1)
     
-    db_path = sys.argv[1]
-    logger.info("Status checker service started")
+    db_path = os.path.abspath(sys.argv[1])
+    logger.info(f"Status checker service started with database: {db_path}")
+    
+    if not os.path.exists(os.path.dirname(db_path)):
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    
+    # Create Flask app for database models
+    app = Flask(__name__)
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    db = SQLAlchemy(app)
+    
+    # Define models
+    class ApplicationInstance(db.Model):
+        id = db.Column(db.Integer, primary_key=True)
+        application_id = db.Column(db.Integer, db.ForeignKey('application.id'), nullable=False)
+        host = db.Column(db.String(100), nullable=False)
+        port = db.Column(db.Integer)
+        webui_url = db.Column(db.String(200))
+        db_host = db.Column(db.String(100))
+        status = db.Column(db.String(20), default='unknown')
+        details = db.Column(db.Text)
+        last_checked = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    class Application(db.Model):
+        id = db.Column(db.Integer, primary_key=True)
+        name = db.Column(db.String(100), nullable=False)
+        team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
+        instances = db.relationship('ApplicationInstance', backref='application', lazy=True)
+    
+    class Team(db.Model):
+        id = db.Column(db.Integer, primary_key=True)
+        name = db.Column(db.String(100), unique=True, nullable=False)
+        applications = db.relationship('Application', backref='team', lazy=True)
+    
+    # Create tables
+    with app.app_context():
+        db.create_all()
     
     while True:
         try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            
-            instances = get_instances(cursor)
-            logger.info(f"Checking status for {len(instances)} instances")
-            
-            for instance in instances:
+            with app.app_context():
+                instances = ApplicationInstance.query.all()
+                logger.info(f"Checking status for {len(instances)} instances")
+                
+                for instance in instances:
+                    try:
+                        status, details = check_instance_status({
+                            'host': instance.host,
+                            'port': instance.port,
+                            'webui_url': instance.webui_url
+                        })
+                        instance.status = status
+                        instance.details = details
+                        instance.last_checked = datetime.utcnow()
+                    except Exception as e:
+                        logger.error(f"Error checking instance {instance.id}: {str(e)}")
+                        continue
+                
                 try:
-                    status, details = check_instance_status(instance)
-                    update_instance_status(cursor, instance['id'], status, details)
+                    db.session.commit()
+                    logger.info("Successfully updated instance statuses")
                 except Exception as e:
-                    logger.error(f"Error checking instance {instance['id']}: {e}")
-            
-            conn.commit()
-            logger.info("Status check complete")
-            
-        except Exception as e:
-            logger.error(f"Database error: {e}")
+                    logger.error(f"Error committing status updates: {str(e)}")
+                    db.session.rollback()
         
-        finally:
-            if 'conn' in locals():
-                conn.close()
+        except Exception as e:
+            logger.error(f"Database error: {str(e)}")
         
         time.sleep(30)  # Wait 30 seconds before next check
 
