@@ -262,16 +262,14 @@ def check_status(app_id):
 
 @main.route('/check_instance_status/<int:instance_id>')
 def check_instance_status(instance_id):
-    instance = ApplicationInstance.query.get_or_404(instance_id)
     try:
-        # Use check_host_status from utils
+        instance = ApplicationInstance.query.get_or_404(instance_id)
         is_running, details = check_host_status(instance.host, instance.port)
         
-        # Update instance status based on check results
+        # Update instance status
         instance.status = 'running' if is_running else 'stopped'
         instance.last_checked = datetime.utcnow()
         
-        # Commit changes
         try:
             db.session.commit()
         except Exception as e:
@@ -283,14 +281,12 @@ def check_instance_status(instance_id):
                 'message': f"Database error: {str(e)}"
             }), 500
         
-        # Return detailed status
         return jsonify({
-            'status': instance.status,
+            'status': 'success',
             'host': instance.host,
             'port': instance.port,
             'is_running': is_running,
-            'details': details,
-            'last_checked': instance.last_checked.isoformat() if instance.last_checked else None
+            'details': details
         })
         
     except Exception as e:
@@ -322,6 +318,7 @@ def check_all_status():
                     app_is_running = False
                 
                 app_results.append({
+                    'id': instance.id,
                     'host': instance.host,
                     'port': instance.port,
                     'status': instance.status,

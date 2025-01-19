@@ -189,7 +189,7 @@ function checkAllStatus(showLoading = true) {
                     if (!row) return;
                     
                     const statusBadge = row.querySelector('.badge');
-                    updateStatusBadge(statusBadge, instance.status, instance.details);
+                    updateStatusBadge(statusBadge, instance.status, instance.details || []);
                 });
             });
         })
@@ -211,7 +211,8 @@ function checkInstanceStatus(instanceId) {
     fetch(`/check_instance_status/${instanceId}`)
         .then(response => response.json())
         .then(data => {
-            updateStatusBadge(statusBadge, data.is_running ? 'running' : 'stopped', data.details);
+            let status = data.is_running ? 'running' : 'stopped';
+            updateStatusBadge(statusBadge, status, data.details || []);
         })
         .catch(error => {
             console.error('Error:', error);
