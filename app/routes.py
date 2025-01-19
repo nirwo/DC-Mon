@@ -182,26 +182,52 @@ def import_data():
         return jsonify({'success': False, 'error': 'Only CSV files are allowed'})
     
     try:
-        # Read CSV content
         content = file.read().decode('utf-8')
         csv_reader = csv.DictReader(StringIO(content))
+        rows = list(csv_reader)
         
         db = get_db()
+        duplicates = []
         
-        # First, validate that there are no duplicate hosts
-        hosts = set()
-        rows = []
-        for row in csv_reader:
+        # Check for duplicates first
+        for row in rows:
             host = row.get('host', '').strip()
             if not host:
                 continue
-            if host in hosts:
-                return jsonify({'success': False, 'error': f'Duplicate host found: {host}'})
-            hosts.add(host)
-            rows.append(row)
+                
+            existing = db.systems.find_one({'host': host})
+            if existing:
+                # Get existing system details
+                app = db.applications.find_one({'_id': ObjectId(existing['application_id'])})
+                team = db.teams.find_one({'_id': ObjectId(app['team_id'])}) if app else None
+                
+                duplicates.append({
+                    'existing': {
+                        'host': host,
+                        'name': existing['name'],
+                        'team': team['name'] if team else 'Unknown',
+                        'application': app['name'] if app else 'Unknown',
+                        'port': existing.get('port'),
+                        'webui_url': existing.get('webui_url')
+                    },
+                    'new': {
+                        'host': host,
+                        'name': row.get('name'),
+                        'team': row.get('team'),
+                        'port': row.get('port'),
+                        'webui_url': row.get('webui_url')
+                    }
+                })
         
+        if duplicates:
+            return jsonify({
+                'success': False,
+                'error': 'duplicate_found',
+                'duplicates': duplicates
+            })
+        
+        # No duplicates, proceed with import
         for row in rows:
-            # Get or create team
             team_name = row.get('team', 'Default Team')
             team = db.teams.find_one_and_update(
                 {'name': team_name},
@@ -211,7 +237,6 @@ def import_data():
             )
             team_id = team['_id']
             
-            # Get or update application
             app_name = row.get('name')
             host = row.get('host', '').strip()
             if not app_name or not host:
@@ -232,39 +257,89 @@ def import_data():
             )
             app_id = app['_id']
             
-            # Check if system with this host exists
-            existing_system = db.systems.find_one({'host': host})
-            if existing_system:
-                # Update existing system
-                system_data = {
-                    'name': app_name,
-                    'application_id': str(app_id),
-                    'host': host,
-                    'port': int(row.get('port')) if row.get('port') else None,
-                    'webui_url': row.get('webui_url'),
-                    'status': existing_system.get('status', 'unknown'),
-                    'last_checked': existing_system.get('last_checked', datetime.utcnow())
-                }
-                db.systems.update_one(
-                    {'_id': existing_system['_id']},
-                    {'$set': system_data}
-                )
-            else:
-                # Create new system
-                system_data = {
-                    'name': app_name,
-                    'application_id': str(app_id),
-                    'host': host,
-                    'port': int(row.get('port')) if row.get('port') else None,
-                    'webui_url': row.get('webui_url'),
-                    'status': 'unknown',
-                    'last_checked': datetime.utcnow()
-                }
-                db.systems.insert_one(system_data)
+            system_data = {
+                'name': app_name,
+                'application_id': str(app_id),
+                'host': host,
+                'port': int(row.get('port')) if row.get('port') else None,
+                'webui_url': row.get('webui_url'),
+                'status': 'unknown',
+                'last_checked': datetime.utcnow()
+            }
+            db.systems.insert_one(system_data)
         
         return jsonify({'success': True})
+        
     except Exception as e:
         logger.error(f"Import error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@main.route('/import/resolve', methods=['POST'])
+def resolve_import():
+    try:
+        data = request.json
+        if not data or 'resolutions' not in data:
+            return jsonify({'success': False, 'error': 'No resolution data provided'})
+            
+        db = get_db()
+        
+        for resolution in data['resolutions']:
+            host = resolution.get('host')
+            action = resolution.get('action')
+            
+            if not host or not action:
+                continue
+                
+            if action == 'skip':
+                continue
+                
+            system_data = resolution.get('data', {})
+            team_name = system_data.get('team', 'Default Team')
+            
+            # Get or create team
+            team = db.teams.find_one_and_update(
+                {'name': team_name},
+                {'$set': {'name': team_name}},
+                upsert=True,
+                return_document=True
+            )
+            
+            # Get or create application
+            app_data = {
+                'name': system_data.get('name'),
+                'team_id': str(team['_id']),
+                'shutdown_order': int(system_data.get('shutdown_order', 0)),
+                'dependencies': system_data.get('dependencies', [])
+            }
+            
+            app = db.applications.find_one_and_update(
+                {'name': app_data['name'], 'team_id': app_data['team_id']},
+                {'$set': app_data},
+                upsert=True,
+                return_document=True
+            )
+            
+            # Update or replace system
+            system_update = {
+                'name': system_data.get('name'),
+                'application_id': str(app['_id']),
+                'host': host,
+                'port': int(system_data.get('port')) if system_data.get('port') else None,
+                'webui_url': system_data.get('webui_url'),
+                'status': 'unknown',
+                'last_checked': datetime.utcnow()
+            }
+            
+            if action == 'update':
+                db.systems.update_one({'host': host}, {'$set': system_update})
+            elif action == 'replace':
+                db.systems.delete_one({'host': host})
+                db.systems.insert_one(system_update)
+                
+        return jsonify({'success': True})
+        
+    except Exception as e:
+        logger.error(f"Resolution error: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
 @main.route('/api/import_data', methods=['POST'])
