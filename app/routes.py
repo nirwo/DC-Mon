@@ -731,3 +731,24 @@ def delete_application(app_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@main.route('/update_instance_url/<int:instance_id>', methods=['POST'])
+def update_instance_url(instance_id):
+    try:
+        instance = ApplicationInstance.query.get_or_404(instance_id)
+        data = request.get_json()
+        instance.webui_url = data.get('url', '')
+        db.session.commit()
+        return jsonify({
+            'status': 'success',
+            'message': 'URL updated successfully',
+            'instance': {
+                'id': instance.id,
+                'url': instance.webui_url,
+                'host': instance.host,
+                'application_id': instance.application_id
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500

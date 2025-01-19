@@ -130,6 +130,9 @@
                                                             <button class="btn btn-sm btn-outline-danger" onclick="confirmInstanceShutdown({{ instance.id }})">
                                                                 <i class="bi bi-power"></i>
                                                             </button>
+                                                            <button class="btn btn-sm btn-link text-muted" onclick="updateInstanceUrl({{ instance.id }})">
+                                                                <i class="bi bi-pencil-square"></i>
+                                                            </button>
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -232,6 +235,45 @@ function filterTable(inputId, tableId) {
             }
         }
     }
+}
+
+function updateInstanceUrl(instanceId) {
+    const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
+    const urlCell = row.querySelector('td:nth-child(2)');
+    const currentUrl = urlCell.querySelector('a')?.href || '';
+    
+    const newUrl = prompt('Enter new URL:', currentUrl);
+    if (newUrl === null) return; // User cancelled
+    
+    fetch(`/update_instance_url/${instanceId}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: newUrl })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            if (newUrl) {
+                urlCell.innerHTML = `<a href="${newUrl}" target="_blank" class="text-decoration-none">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>${newUrl}</a>
+                    <button class="btn btn-sm btn-link text-muted" onclick="updateInstanceUrl(${instanceId})">
+                        <i class="bi bi-pencil-square"></i>
+                    </button>`;
+            } else {
+                urlCell.innerHTML = `<button class="btn btn-sm btn-link" onclick="updateInstanceUrl(${instanceId})">
+                    <i class="bi bi-plus-circle me-1"></i>Add URL</button>`;
+            }
+            showAlert('success', 'URL updated successfully');
+        } else {
+            showAlert('danger', 'Error updating URL: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('danger', 'Error updating URL');
+    });
 }
 
 document.addEventListener('DOMContentLoaded', function() {
