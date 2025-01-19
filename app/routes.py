@@ -264,39 +264,20 @@ def check_status(app_id):
 def check_instance_status(instance_id):
     try:
         instance = ApplicationInstance.query.get_or_404(instance_id)
-        is_running, details = check_host_status(instance.host, instance.port)
+        is_running = ping_host(instance.host)
         
         # Update instance status
-        instance.status = 'running' if is_running else 'stopped'
+        instance.last_status = is_running
         instance.last_checked = datetime.utcnow()
-        
-        try:
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({
-                'status': 'error',
-                'host': instance.host,
-                'port': instance.port,
-                'message': f"Database error: {str(e)}"
-            }), 500
+        db.session.commit()
         
         return jsonify({
             'status': 'success',
-            'host': instance.host,
-            'port': instance.port,
             'is_running': is_running,
-            'details': details
+            'details': []
         })
-        
     except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            'status': 'error',
-            'host': instance.host,
-            'port': instance.port,
-            'message': str(e)
-        }), 500
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @main.route('/check_all_status')
 def check_all_status():
@@ -749,6 +730,39 @@ def update_instance_url(instance_id):
                 'application_id': instance.application_id
             }
         })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@main.route('/delete_selected_applications', methods=['POST'])
+def delete_selected_applications():
+    try:
+        data = request.get_json()
+        app_ids = data.get('app_ids', [])
+        
+        # Delete instances first
+        ApplicationInstance.query.filter(ApplicationInstance.application_id.in_(app_ids)).delete(synchronize_session=False)
+        
+        # Then delete applications
+        Application.query.filter(Application.id.in_(app_ids)).delete(synchronize_session=False)
+        
+        db.session.commit()
+        return jsonify({'status': 'success', 'message': f'Deleted {len(app_ids)} applications'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@main.route('/delete_all_applications', methods=['POST'])
+def delete_all_applications():
+    try:
+        # Delete all instances first
+        ApplicationInstance.query.delete(synchronize_session=False)
+        
+        # Then delete all applications
+        Application.query.delete(synchronize_session=False)
+        
+        db.session.commit()
+        return jsonify({'status': 'success', 'message': 'All applications deleted'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500

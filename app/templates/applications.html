@@ -15,6 +15,14 @@
                 <span class="input-group-text"><i class="bi bi-search"></i></span>
                 <input type="text" class="form-control" id="searchInput" placeholder="Search applications or systems...">
             </div>
+            <div class="btn-group">
+                <button class="btn btn-danger" onclick="confirmDeleteAll()">
+                    <i class="bi bi-trash me-1"></i>Delete All
+                </button>
+                <button class="btn btn-danger" onclick="confirmDeleteSelected()">
+                    <i class="bi bi-trash me-1"></i>Delete Selected
+                </button>
+            </div>
             <button class="btn btn-primary" onclick="createApplication()">
                 <i class="bi bi-plus-circle me-1"></i>Add Application
             </button>
@@ -44,6 +52,7 @@
                 <table class="table table-hover" id="activeTable">
                     <thead>
                         <tr>
+                            <th><input type="checkbox" id="selectAll"></th>
                             <th>Name</th>
                             <th>Team</th>
                             <th>Status</th>
@@ -55,6 +64,7 @@
                         {% for app in applications %}
                         {% if not app.completed %}
                         <tr data-app-id="{{ app.id }}">
+                            <td><input type="checkbox" name="selected_apps" value="{{ app.id }}"></td>
                             <td>
                                 <div class="d-flex align-items-center">
                                     <button class="btn btn-sm btn-link me-2 toggle-instances" onclick="toggleInstances({{ app.id }})">
@@ -90,7 +100,7 @@
                             </td>
                         </tr>
                         <tr class="instances-row d-none" data-parent-id="{{ app.id }}">
-                            <td colspan="5" class="p-0">
+                            <td colspan="6" class="p-0">
                                 <div class="instances-container bg-light p-3">
                                     <div class="table-responsive">
                                         <table class="table table-sm mb-0">
@@ -299,13 +309,27 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Check status of visible instances every 30 seconds
-    setInterval(() => {
+    // Check status of visible instances every 10 minutes
+    let statusCheckInterval = setInterval(() => {
         const visibleInstances = document.querySelectorAll('.instances-row:not(.d-none) [data-instance-id]');
         visibleInstances.forEach(instance => {
             checkInstanceStatus(instance.dataset.instanceId);
         });
-    }, 30000);
+    }, 600000); // 10 minutes
+    
+    // Clear interval when page is hidden/inactive
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            clearInterval(statusCheckInterval);
+        } else {
+            statusCheckInterval = setInterval(() => {
+                const visibleInstances = document.querySelectorAll('.instances-row:not(.d-none) [data-instance-id]');
+                visibleInstances.forEach(instance => {
+                    checkInstanceStatus(instance.dataset.instanceId);
+                });
+            }, 600000);
+        }
+    });
 });
 
 function toggleInstances(appId) {
@@ -844,6 +868,61 @@ $(document).ready(function() {
         return new bootstrap.Tooltip(tooltipTriggerEl)
     });
 });
+
+function confirmDeleteAll() {
+    if (confirm('Are you sure you want to delete ALL applications? This cannot be undone.')) {
+        fetch('/delete_all_applications', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload();
+            } else {
+                showAlert('danger', 'Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('danger', 'Error deleting applications');
+        });
+    }
+}
+
+function confirmDeleteSelected() {
+    const selectedApps = document.querySelectorAll('input[name="selected_apps"]:checked');
+    if (selectedApps.length === 0) {
+        showAlert('warning', 'Please select at least one application to delete');
+        return;
+    }
+    
+    if (confirm(`Are you sure you want to delete ${selectedApps.length} selected applications? This cannot be undone.`)) {
+        const appIds = Array.from(selectedApps).map(cb => parseInt(cb.value));
+        
+        fetch('/delete_selected_applications', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ app_ids: appIds })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload();
+            } else {
+                showAlert('danger', 'Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('danger', 'Error deleting applications');
+        });
+    }
+}
 
 </script>
 
