@@ -3,8 +3,8 @@ import time
 from datetime import datetime
 from threading import Thread
 from flask import current_app
-from app import create_app
 from app.database import get_db
+from app import create_app
 from app.models import Application, ApplicationInstance
 
 def check_status(host, port):
