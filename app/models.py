@@ -2,15 +2,19 @@ from datetime import datetime
 from bson import ObjectId
 
 class Team:
-    def __init__(self, name):
+    def __init__(self, name, _id=None):
+        self._id = ObjectId(_id) if _id else ObjectId()
         self.name = name
         
-    @staticmethod
-    def from_dict(data):
-        team = Team(data['name'])
-        team._id = data.get('_id', ObjectId())
-        return team
-        
+    @classmethod
+    def from_dict(cls, data):
+        if not data:
+            return None
+        return cls(
+            name=data.get('name'),
+            _id=data.get('_id')
+        )
+
     def to_dict(self):
         return {
             '_id': self._id,
@@ -21,12 +25,10 @@ class Team:
         return f'<Team {self.name}>'
 
 class Application:
-    def __init__(self, name, host=None, port=None, team_id=None, _id=None):
-        self._id = _id
+    def __init__(self, name, team_id=None, _id=None):
+        self._id = ObjectId(_id) if _id else ObjectId()
         self.name = name
-        self.host = host
-        self.port = port
-        self.team_id = team_id
+        self.team_id = ObjectId(team_id) if team_id else None
         self.created_at = datetime.utcnow()
         self.updated_at = datetime.utcnow()
 
@@ -34,51 +36,61 @@ class Application:
     def from_dict(cls, data):
         if not data:
             return None
-        return cls(
-            _id=data.get('_id'),
+        app = cls(
             name=data.get('name'),
-            host=data.get('host'),
-            port=data.get('port'),
-            team_id=data.get('team_id')
+            team_id=data.get('team_id'),
+            _id=data.get('_id')
         )
+        if 'created_at' in data:
+            app.created_at = data['created_at']
+        if 'updated_at' in data:
+            app.updated_at = data['updated_at']
+        return app
 
     def to_dict(self):
         return {
-            '_id': str(self._id) if self._id else None,
+            '_id': self._id,
             'name': self.name,
-            'host': self.host,
-            'port': self.port,
-            'team_id': str(self.team_id) if self.team_id else None,
+            'team_id': self.team_id,
             'created_at': self.created_at,
             'updated_at': self.updated_at
         }
 
 class ApplicationInstance:
-    def __init__(self, application_id, host, port=None, webui_url=None, db_host=None):
-        self.application_id = application_id
+    def __init__(self, application_id, host, port=None, webui_url=None, db_host=None, _id=None):
+        self._id = ObjectId(_id) if _id else ObjectId()
+        self.application_id = ObjectId(application_id) if application_id else None
         self.host = host
         self.port = port
         self.webui_url = webui_url
         self.db_host = db_host
-        self.status = 'unknown'
-        self.details = None
-        self.last_checked = datetime.utcnow()
+        self.status = "unknown"
+        self.last_check = datetime.utcnow()
+        self.created_at = datetime.utcnow()
+        self.updated_at = datetime.utcnow()
         
-    @staticmethod
-    def from_dict(data):
-        instance = ApplicationInstance(
-            data['application_id'],
-            data['host'],
-            data.get('port'),
-            data.get('webui_url'),
-            data.get('db_host')
+    @classmethod
+    def from_dict(cls, data):
+        if not data:
+            return None
+        instance = cls(
+            application_id=data.get('application_id'),
+            host=data.get('host'),
+            port=data.get('port'),
+            webui_url=data.get('webui_url'),
+            db_host=data.get('db_host'),
+            _id=data.get('_id')
         )
-        instance._id = data.get('_id', ObjectId())
-        instance.status = data.get('status', 'unknown')
-        instance.details = data.get('details')
-        instance.last_checked = data.get('last_checked', datetime.utcnow())
+        if 'status' in data:
+            instance.status = data['status']
+        if 'last_check' in data:
+            instance.last_check = data['last_check']
+        if 'created_at' in data:
+            instance.created_at = data['created_at']
+        if 'updated_at' in data:
+            instance.updated_at = data['updated_at']
         return instance
-        
+
     def to_dict(self):
         return {
             '_id': self._id,
@@ -88,8 +100,9 @@ class ApplicationInstance:
             'webui_url': self.webui_url,
             'db_host': self.db_host,
             'status': self.status,
-            'details': self.details,
-            'last_checked': self.last_checked
+            'last_check': self.last_check,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at
         }
 
     def __repr__(self):

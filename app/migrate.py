@@ -1,47 +1,45 @@
-from pymongo import MongoClient
-import os
+from app.database import get_db
+from app.models import Team
 import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def init_mongodb():
+def init_db():
+    """Initialize the MongoDB database with required collections and indexes."""
     try:
-        # Connect to MongoDB
-        mongo_uri = os.environ.get('MONGODB_URI', 'mongodb://mongo:27017/shutdown_manager')
-        mongo_client = MongoClient(mongo_uri)
-        mongo_db = mongo_client.get_database()
-
-        # Drop existing collections
-        mongo_db.teams.drop()
-        mongo_db.applications.drop()
-        mongo_db.application_instances.drop()
-
-        # Create indexes
-        mongo_db.applications.create_index('name', unique=True)
-        mongo_db.teams.create_index('name', unique=True)
+        db = get_db()
         
-        # Insert sample data
-        teams = [
-            {'name': 'Team A'},
-            {'name': 'Team B'},
+        # Drop existing collections
+        logger.info("Dropping existing collections...")
+        db.teams.drop()
+        db.applications.drop()
+        db.application_instances.drop()
+        
+        # Create indexes
+        logger.info("Creating indexes...")
+        db.teams.create_index("name", unique=True)
+        db.applications.create_index("name", unique=True)
+        db.application_instances.create_index([("application_id", 1), ("host", 1)], unique=True)
+        
+        # Insert sample teams
+        logger.info("Inserting sample teams...")
+        sample_teams = [
+            Team(name="DevOps"),
+            Team(name="Development"),
+            Team(name="QA"),
+            Team(name="Infrastructure")
         ]
         
-        for team in teams:
-            try:
-                result = mongo_db.teams.insert_one(team)
-                logger.info(f"Created team: {team['name']}")
-            except Exception as e:
-                logger.warning(f"Error creating team {team['name']}: {e}")
-
-        logger.info("MongoDB initialization completed successfully")
+        for team in sample_teams:
+            db.teams.insert_one(team.to_dict())
+            logger.info(f"Added team: {team.name}")
+        
+        logger.info("Database initialization completed successfully")
         
     except Exception as e:
-        logger.error(f"MongoDB initialization failed: {e}")
+        logger.error(f"Error initializing database: {str(e)}")
         raise
-    finally:
-        if 'mongo_client' in locals():
-            mongo_client.close()
 
-if __name__ == '__main__':
-    init_mongodb()
+if __name__ == "__main__":
+    init_db()

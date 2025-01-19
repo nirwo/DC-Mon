@@ -60,7 +60,7 @@ def systems():
             }
         }
     ]
-    instances = [ApplicationInstance.from_dict(inst) for inst in db.instances.aggregate(pipeline)]
+    instances = [ApplicationInstance.from_dict(inst) for inst in db.application_instances.aggregate(pipeline)]
     return render_template('systems.html', instances=instances)
 
 @main.route('/check_all_status')
@@ -69,7 +69,7 @@ def check_all_status():
         logger.info("Starting check_all_status")
         db = get_db()
         
-        instances = db.instances.find()
+        instances = db.application_instances.find()
         for instance_data in instances:
             try:
                 instance = ApplicationInstance.from_dict(instance_data)
@@ -77,7 +77,7 @@ def check_all_status():
                 instance.details = 'Status check initiated'
                 instance.last_checked = datetime.utcnow()
                 
-                db.instances.update_one(
+                db.application_instances.update_one(
                     {'_id': instance._id},
                     {'$set': instance.to_dict()}
                 )
@@ -97,7 +97,7 @@ def check_status(instance_id):
         logger.info(f"Starting check_status for instance {instance_id}")
         db = get_db()
         
-        instance_data = db.instances.find_one({'_id': ObjectId(instance_id)})
+        instance_data = db.application_instances.find_one({'_id': ObjectId(instance_id)})
         if not instance_data:
             return jsonify({'status': 'error', 'message': 'Instance not found'}), 404
         
@@ -106,7 +106,7 @@ def check_status(instance_id):
         instance.details = 'Status check initiated'
         instance.last_checked = datetime.utcnow()
         
-        db.instances.update_one(
+        db.application_instances.update_one(
             {'_id': instance._id},
             {'$set': instance.to_dict()}
         )
@@ -203,7 +203,7 @@ def import_data():
                 if not isinstance(instance_data, dict) or 'host' not in instance_data:
                     continue
                     
-                instance = db.instances.find_one({
+                instance = db.application_instances.find_one({
                     'application_id': app['_id'],
                     'host': instance_data['host']
                 })
@@ -217,9 +217,9 @@ def import_data():
                         'db_host': instance_data.get('db_host'),
                         'status': 'unknown'
                     }
-                    db.instances.insert_one(instance)
+                    db.application_instances.insert_one(instance)
                 else:
-                    db.instances.update_one(
+                    db.application_instances.update_one(
                         {'_id': instance['_id']},
                         {'$set': instance_data}
                     )
@@ -237,14 +237,14 @@ def import_data():
 def delete_instance(instance_id):
     try:
         db = get_db()
-        instance = db.instances.find_one({'_id': ObjectId(instance_id)})
+        instance = db.application_instances.find_one({'_id': ObjectId(instance_id)})
         if not instance:
             return jsonify({'status': 'error', 'message': 'Instance not found'}), 404
         
-        db.instances.delete_one({'_id': instance['_id']})
+        db.application_instances.delete_one({'_id': instance['_id']})
         
         # Check if this was the last instance
-        remaining_instances = db.instances.find({'application_id': instance['application_id']}).count()
+        remaining_instances = db.application_instances.find({'application_id': instance['application_id']}).count()
         if remaining_instances == 0:
             # If no instances left, delete the application too
             app = db.applications.find_one({'_id': instance['application_id']})
@@ -265,7 +265,7 @@ def delete_application(app_id):
             return jsonify({'status': 'error', 'message': 'Application not found'}), 404
         
         # Delete all instances first
-        db.instances.delete_many({'application_id': app['_id']})
+        db.application_instances.delete_many({'application_id': app['_id']})
         # Then delete the application
         db.applications.delete_one({'_id': app['_id']})
         return jsonify({'status': 'success'})
@@ -277,12 +277,12 @@ def delete_application(app_id):
 def update_instance_url(instance_id):
     try:
         db = get_db()
-        instance = db.instances.find_one({'_id': ObjectId(instance_id)})
+        instance = db.application_instances.find_one({'_id': ObjectId(instance_id)})
         if not instance:
             return jsonify({'status': 'error', 'message': 'Instance not found'}), 404
         
         data = request.get_json()
-        db.instances.update_one(
+        db.application_instances.update_one(
             {'_id': instance['_id']},
             {'$set': {'webui_url': data.get('url', '')}}
         )
@@ -309,11 +309,11 @@ def update_system():
         new_name = data.get('name')
         new_team = data.get('team')
         
-        instance = db.instances.find_one({'_id': ObjectId(system_id)})
+        instance = db.application_instances.find_one({'_id': ObjectId(system_id)})
         if not instance:
             return jsonify({'status': 'error', 'message': 'Instance not found'}), 404
         
-        db.instances.update_one(
+        db.application_instances.update_one(
             {'_id': instance['_id']},
             {'$set': {'host': new_name}}
         )
@@ -372,7 +372,7 @@ def get_all_systems():
             }
         ]
         
-        instances = list(db.instances.aggregate(pipeline))
+        instances = list(db.application_instances.aggregate(pipeline))
         
         # Format the response
         systems = [{
@@ -421,7 +421,7 @@ def update_application():
         if instances:
             # Delete removed instances
             current_instance_ids = [i.get('id') for i in instances if i.get('id')]
-            db.instances.delete_many({
+            db.application_instances.delete_many({
                 'application_id': application['_id'],
                 '_id': {'$not': {'$in': [ObjectId(i) for i in current_instance_ids]}}
             })
@@ -430,9 +430,9 @@ def update_application():
             for instance_data in instances:
                 instance_id = instance_data.get('id')
                 if instance_id:
-                    instance = db.instances.find_one({'_id': ObjectId(instance_id)})
+                    instance = db.application_instances.find_one({'_id': ObjectId(instance_id)})
                     if instance:
-                        db.instances.update_one(
+                        db.application_instances.update_one(
                             {'_id': instance['_id']},
                             {'$set': instance_data}
                         )
@@ -444,7 +444,7 @@ def update_application():
                         'webui_url': instance_data.get('webui_url'),
                         'db_host': instance_data.get('db_host')
                     }
-                    db.instances.insert_one(instance)
+                    db.application_instances.insert_one(instance)
         
         return jsonify({'status': 'success'})
     except Exception as e:
@@ -459,17 +459,60 @@ def create_application():
         
         app = Application(
             name=data['name'],
-            host=data['host'],
-            port=data.get('port'),
             team_id=data.get('team_id')
         )
         
         result = db.applications.insert_one(app.to_dict())
         app._id = result.inserted_id
         
+        # Create instance if host is provided
+        if 'host' in data:
+            instance = ApplicationInstance(
+                application_id=str(result.inserted_id),
+                host=data['host'],
+                port=data.get('port'),
+                webui_url=data.get('webui_url'),
+                db_host=data.get('db_host')
+            )
+            db.application_instances.insert_one(instance.to_dict())
+        
         return jsonify({"message": "Application created successfully", "id": str(result.inserted_id)}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+@main.route('/api/applications/<app_id>/instances', methods=['POST'])
+def add_instance(app_id):
+    try:
+        data = request.get_json()
+        db = get_db()
+        
+        # Verify application exists
+        app = db.applications.find_one({'_id': ObjectId(app_id)})
+        if not app:
+            return jsonify({"error": "Application not found"}), 404
+        
+        instance = ApplicationInstance(
+            application_id=app_id,
+            host=data['host'],
+            port=data.get('port'),
+            webui_url=data.get('webui_url'),
+            db_host=data.get('db_host')
+        )
+        
+        result = db.application_instances.insert_one(instance.to_dict())
+        return jsonify({"message": "Instance added successfully", "id": str(result.inserted_id)}), 201
+    except Exception as e:
+        logger.error(f"Error adding instance: {str(e)}")
+        return jsonify({"error": str(e)}), 400
+
+@main.route('/api/applications/<app_id>/instances', methods=['GET'])
+def list_instances(app_id):
+    try:
+        db = get_db()
+        instances = [ApplicationInstance.from_dict(inst) for inst in db.application_instances.find({"application_id": ObjectId(app_id)})]
+        return jsonify([inst.to_dict() for inst in instances])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @main.route('/api/applications', methods=['GET'])
 def list_applications():
@@ -488,5 +531,47 @@ def get_application(app_id):
         if app:
             return jsonify(Application.from_dict(app).to_dict())
         return jsonify({"error": "Application not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@main.route('/api/teams', methods=['GET'])
+def list_teams():
+    try:
+        db = get_db()
+        teams = [Team.from_dict(team) for team in db.teams.find()]
+        return jsonify([team.to_dict() for team in teams])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@main.route('/api/teams', methods=['POST'])
+def create_team():
+    try:
+        data = request.get_json()
+        db = get_db()
+        
+        team = Team(name=data['name'])
+        result = db.teams.insert_one(team.to_dict())
+        team._id = result.inserted_id
+        
+        return jsonify({"message": "Team created successfully", "id": str(result.inserted_id)}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@main.route('/api/teams/<team_id>', methods=['DELETE'])
+def delete_team(team_id):
+    try:
+        db = get_db()
+        
+        # Check if team exists
+        team = db.teams.find_one({'_id': ObjectId(team_id)})
+        if not team:
+            return jsonify({"error": "Team not found"}), 404
+            
+        # Check if team has applications
+        if db.applications.find_one({'team_id': ObjectId(team_id)}):
+            return jsonify({"error": "Cannot delete team with existing applications"}), 400
+            
+        db.teams.delete_one({'_id': ObjectId(team_id)})
+        return jsonify({"message": "Team deleted successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
