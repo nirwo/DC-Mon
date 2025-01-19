@@ -1,12 +1,13 @@
-from app.database import get_db
-from app.models import Team
 import logging
+from datetime import datetime
+from database import get_db
+from models import Team, Application
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def init_db():
-    """Initialize the MongoDB database with required collections and indexes."""
+    """Initialize the database with sample data"""
     try:
         db = get_db()
         
@@ -14,25 +15,26 @@ def init_db():
         logger.info("Dropping existing collections...")
         db.teams.drop()
         db.applications.drop()
-        db.application_instances.drop()
         
         # Create indexes
         logger.info("Creating indexes...")
         db.teams.create_index("name", unique=True)
         db.applications.create_index("name", unique=True)
-        db.application_instances.create_index([("application_id", 1), ("host", 1)], unique=True)
         
         # Insert sample teams
         logger.info("Inserting sample teams...")
-        sample_teams = [
-            Team(name="DevOps"),
-            Team(name="Development"),
-            Team(name="QA"),
-            Team(name="Infrastructure")
+        teams = [
+            {"name": "DevOps", "description": "DevOps Team"},
+            {"name": "Development", "description": "Development Team"},
+            {"name": "QA", "description": "Quality Assurance Team"},
+            {"name": "Infrastructure", "description": "Infrastructure Team"}
         ]
         
-        for team in sample_teams:
-            db.teams.insert_one(team.to_dict())
+        team_ids = {}
+        for team_data in teams:
+            team = Team(**team_data)
+            result = db.teams.insert_one(team.to_dict())
+            team_ids[team.name] = str(result.inserted_id)
             logger.info(f"Added team: {team.name}")
         
         logger.info("Database initialization completed successfully")
