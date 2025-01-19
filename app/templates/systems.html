@@ -1,112 +1,61 @@
 {% extends "base.html" %}
 
+{% block title %}Systems Overview{% endblock %}
+
 {% block content %}
 <div class="container">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Systems</h2>
-        <div>
-            <button class="btn btn-outline-info me-2" onclick="checkAllStatus()">
-                <i class="bi bi-arrow-repeat me-1"></i> Test All
-            </button>
-            <a href="/" class="btn btn-outline-primary me-2">
-                <i class="bi bi-grid me-1"></i> Applications View
-            </a>
-            <button class="btn btn-primary" onclick="showImportModal()">
-                <i class="bi bi-upload me-1"></i> Import
-            </button>
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-hover" id="systemsTable">
-                    <thead>
-                        <tr>
-                            <th>Team</th>
-                            <th>Application</th>
-                            <th>Host</th>
-                            <th>Port</th>
-                            <th>WebUI</th>
-                            <th>Database</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for instance in instances %}
-                        <tr data-instance-id="{{ instance.id }}">
-                            <td class="system-team" data-system-id="{{ instance.id }}">{{ instance.application.team.name }}</td>
-                            <td class="system-name" data-system-id="{{ instance.id }}">{{ instance.application.name }}</td>
-                            <td>{{ instance.host }}</td>
-                            <td>{{ instance.port }}</td>
-                            <td>
-                                {% if instance.webui_url %}
-                                <a href="{{ instance.webui_url }}" target="_blank" class="text-decoration-none">
-                                    <i class="bi bi-box-arrow-up-right"></i> Open
-                                </a>
-                                {% endif %}
-                            </td>
-                            <td>{{ instance.db_host }}</td>
-                            <td>
-                                <span class="badge {% if instance.status == 'running' %}bg-success{% elif instance.status == 'stopped' %}bg-danger{% else %}bg-secondary{% endif %}">
-                                    {% if instance.status == 'running' %}
-                                        <i class="bi bi-check-circle me-1"></i>Running
-                                    {% elif instance.status == 'stopped' %}
-                                        <i class="bi bi-x-circle me-1"></i>Stopped
-                                    {% else %}
-                                        <i class="bi bi-question-circle me-1"></i>{{ instance.status|title }}
-                                    {% endif %}
-                                </span>
-                            </td>
-                            <td>
-                                <div class="btn-group">
-                                    <button class="btn btn-sm btn-outline-info" 
-                                            onclick="checkInstanceStatus('{{ instance.id }}')"
-                                            data-bs-toggle="tooltip" 
-                                            data-bs-placement="top" 
-                                            title="Check Status">
-                                        <i class="bi bi-arrow-clockwise"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-danger" 
-                                            onclick="confirmInstanceShutdown('{{ instance.id }}')"
-                                            data-bs-toggle="tooltip" 
-                                            data-bs-placement="top" 
-                                            title="Shutdown Instance">
-                                        <i class="bi bi-power"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-danger" 
-                                            onclick="confirmDelete('{{ instance.application.id }}', '{{ instance.id }}')"
-                                            data-bs-toggle="tooltip" 
-                                            data-bs-placement="top" 
-                                            title="Delete">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-primary" 
-                                            onclick="editSystem('{{ instance.id }}')"
-                                            data-bs-toggle="tooltip" 
-                                            data-bs-placement="top" 
-                                            title="Edit">
-                                        <i class="bi bi-pencil"></i>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+    <h1>Systems Overview</h1>
+    
+    <div class="mb-3">
+        <form id="importForm" class="mb-3" enctype="multipart/form-data">
+            <div class="input-group">
+                <input type="file" id="importFile" name="file" accept=".json,.csv" class="form-control">
+                <button type="button" onclick="importData()" class="btn btn-primary">Import Data</button>
             </div>
-        </div>
+        </form>
+        <button onclick="checkAllStatus()" class="btn btn-secondary">Check All Status</button>
     </div>
+    
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Team</th>
+                <th>Application</th>
+                <th>Host</th>
+                <th>Port</th>
+                <th>WebUI</th>
+                <th>DB Host</th>
+                <th>Status</th>
+                <th>Last Checked</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for instance in instances %}
+            <tr>
+                <td>{{ instance.application.team.name }}</td>
+                <td>{{ instance.application.name }}</td>
+                <td>{{ instance.host }}</td>
+                <td>{{ instance.port }}</td>
+                <td>
+                    {% if instance.webui_url %}
+                    <a href="{{ instance.webui_url }}" target="_blank">Open</a>
+                    {% endif %}
+                </td>
+                <td>{{ instance.db_host }}</td>
+                <td class="status-{{ instance.status|lower }}">{{ instance.status }}</td>
+                <td>{{ instance.last_checked.strftime('%Y-%m-%d %H:%M:%S') if instance.last_checked else 'Never' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
+{% endblock %}
 
-<!-- Import Modal -->
-{% include 'import_modal.html' %}
-
+{% block scripts %}
 <script>
 let checkingStatus = false;
 
-function importData() {
+async function importData() {
     const fileInput = document.getElementById('importFile');
     const file = fileInput.files[0];
     
@@ -115,36 +64,34 @@ function importData() {
         return;
     }
     
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const data = JSON.parse(e.target.result);
-            
-            fetch('/import_data', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data)
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    alert('Import successful');
-                    location.reload();
-                } else {
-                    alert('Import failed: ' + data.message);
-                }
-            })
-            .catch(error => {
-                alert('An unexpected error occurred: ' + error);
-            });
-        } catch (e) {
-            alert('Invalid JSON file: ' + e.message);
-        }
-    };
+    console.log('Reading file:', file.name);
     
-    reader.readAsText(file);
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await fetch('/import_data', {
+            method: 'POST',
+            body: formData
+        });
+        
+        console.log('Response status:', response.status);
+        const responseText = await response.text();
+        console.log('Response text:', responseText);
+        
+        const result = JSON.parse(responseText);
+        console.log('Response data:', result);
+        
+        if (result.status === 'success') {
+            alert('Import successful');
+            location.reload();
+        } else {
+            alert('Import failed: ' + result.message);
+        }
+    } catch (e) {
+        console.error('Error:', e);
+        alert('Error: ' + e.message);
+    }
 }
 
 function checkAllStatus() {
@@ -200,6 +147,7 @@ function checkAllStatus() {
             }
         })
         .catch(error => {
+            console.error('Status check error:', error);
             alert('An unexpected error occurred: ' + error);
             checkingStatus = false;
             button.disabled = false;
@@ -218,217 +166,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
-    
-    // Initialize tooltips
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl)
-    });
-    
-    // Initialize DataTable
-    $('#systemsTable').DataTable({
-        pageLength: 25,
-        order: [[0, 'asc'], [1, 'asc']],
-        dom: '<"d-flex justify-content-between align-items-center mb-3"<"d-flex align-items-center"l><"d-flex align-items-center"f>>rtip',
-        language: {
-            search: "_INPUT_",
-            searchPlaceholder: "Search systems..."
-        }
-    });
-
-    // Start automatic status updates
-    startAutoStatusCheck();
 });
-
-// Auto-refresh interval in milliseconds (30 seconds)
-const AUTO_REFRESH_INTERVAL = 30000;
-
-function startAutoStatusCheck() {
-    // Initial check
-    checkAllStatus();
-    
-    // Set up periodic checks
-    setInterval(checkAllStatus, AUTO_REFRESH_INTERVAL);
-}
-
-function updateStatusBadge(statusBadge, status, details = []) {
-    let badgeClass = 'bg-secondary';
-    let icon = 'question-circle';
-    let text = 'Unknown';
-    
-    if (status === 'running') {
-        badgeClass = 'bg-success';
-        icon = 'check-circle';
-        text = 'Running';
-    } else if (status === 'stopped') {
-        badgeClass = 'bg-danger';
-        icon = 'x-circle';
-        text = 'Stopped';
-    } else if (status === 'error') {
-        badgeClass = 'bg-danger';
-        icon = 'exclamation-triangle';
-        text = 'Error';
-    }
-    
-    statusBadge.className = `badge ${badgeClass}`;
-    statusBadge.innerHTML = `<i class="bi bi-${icon} me-1"></i>${text}`;
-    
-    // Update tooltip with details
-    if (details && details.length > 0) {
-        const tooltip = bootstrap.Tooltip.getInstance(statusBadge);
-        if (tooltip) {
-            tooltip.dispose();
-        }
-        statusBadge.setAttribute('data-bs-toggle', 'tooltip');
-        statusBadge.setAttribute('data-bs-placement', 'top');
-        statusBadge.setAttribute('title', details.join('\n'));
-        new bootstrap.Tooltip(statusBadge);
-    }
-}
-
-function checkInstanceStatus(instanceId) {
-    const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
-    const statusBadge = row.querySelector('.badge');
-    statusBadge.className = 'badge bg-warning';
-    statusBadge.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Checking...';
-
-    fetch(`/check_instance_status/${instanceId}`)
-        .then(response => response.json())
-        .then(data => {
-            let status = data.is_running ? 'running' : 'stopped';
-            updateStatusBadge(statusBadge, status, data.details || []);
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            updateStatusBadge(statusBadge, 'error', ['Failed to check status']);
-        });
-}
-
-function confirmInstanceShutdown(instanceId) {
-    if (confirm('Are you sure you want to shutdown this instance?')) {
-        fetch(`/shutdown_instance/${instanceId}`, { 
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                // Update status badge to "In Progress"
-                const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
-                const statusBadge = row.querySelector('.badge');
-                statusBadge.className = 'badge bg-info';
-                statusBadge.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>In Progress';
-            } else {
-                alert(data.message || 'Failed to initiate shutdown');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Failed to shutdown instance');
-        });
-    }
-}
-
-function confirmDelete(appId, instanceId) {
-    if (confirm('Are you sure you want to delete this system?')) {
-        const url = instanceId ? `/delete_instance/${instanceId}` : `/delete_application/${appId}`;
-        fetch(url, { 
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                // Remove the row from the table
-                const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
-                if (row) {
-                    const table = $('#systemsTable').DataTable();
-                    table.row(row).remove().draw();
-                }
-            } else {
-                console.error('Error:', data.message);
-                alert('Error deleting system: ' + data.message);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Error deleting system');
-        });
-    }
-}
-
-function editSystem(systemId) {
-    const nameElement = document.querySelector(`.system-name[data-system-id="${systemId}"]`);
-    const teamElement = document.querySelector(`.system-team[data-system-id="${systemId}"]`);
-    
-    const currentName = nameElement.textContent;
-    const currentTeam = teamElement.textContent;
-    
-    const newName = prompt('Enter new name:', currentName);
-    if (!newName) return;
-    
-    const newTeam = prompt('Enter new team:', currentTeam);
-    if (!newTeam) return;
-    
-    fetch('/update_system_info', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            id: systemId,
-            name: newName,
-            team: newTeam
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            nameElement.textContent = newName;
-            teamElement.textContent = newTeam;
-            showAlert('success', 'System updated successfully');
-        } else {
-            showAlert('danger', 'Error: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showAlert('danger', 'Error updating system');
-    });
-}
-
-function showAlert(type, message) {
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
-    alertDiv.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    `;
-    document.querySelector('.container').prepend(alertDiv);
-    
-    setTimeout(() => {
-        alertDiv.remove();
-    }, 5000);
-}
 </script>
-
-<style>
-.dataTables_filter {
-    margin-bottom: 0 !important;
-}
-.dataTables_filter input {
-    border: 1px solid #dee2e6;
-    border-radius: 4px;
-    padding: 0.375rem 0.75rem;
-}
-.dataTables_length select {
-    border: 1px solid #dee2e6;
-    border-radius: 4px;
-    padding: 0.375rem 2.25rem 0.375rem 0.75rem;
-}
-</style>
 {% endblock %}

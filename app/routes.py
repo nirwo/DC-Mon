@@ -7,6 +7,7 @@ import requests
 import threading
 import time
 import json
+import csv
 
 main = Blueprint('main', __name__)
 
@@ -131,31 +132,56 @@ def systems():
 @main.route('/import_data', methods=['POST'])
 def import_data():
     try:
-        # Try to get JSON data first
-        if request.is_json:
-            data = request.get_json()
-        # If not JSON, try form data
-        elif 'file' in request.files:
-            file = request.files['file']
-            if file.filename.endswith('.json'):
-                data = json.loads(file.read().decode('utf-8'))
-            else:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'Invalid file format. Please upload a JSON file.'
-                }), 400
+        if 'file' not in request.files:
+            return jsonify({'status': 'error', 'message': 'No file uploaded'}), 400
+            
+        file = request.files['file']
+        if not file.filename:
+            return jsonify({'status': 'error', 'message': 'No file selected'}), 400
+            
+        if file.filename.endswith('.csv'):
+            # Handle CSV import
+            content = file.read().decode('utf-8')
+            reader = csv.DictReader(content.splitlines())
+            
+            # Group by team and application
+            data = {'teams': [], 'applications': []}
+            app_instances = {}
+            
+            for row in reader:
+                team_name = row['team'].strip()
+                app_name = row['name'].strip()
+                key = f"{team_name}:{app_name}"
+                
+                if team_name not in [t['name'] for t in data['teams']]:
+                    data['teams'].append({'name': team_name})
+                
+                if key not in app_instances:
+                    app_instances[key] = {
+                        'name': app_name,
+                        'team': team_name,
+                        'instances': []
+                    }
+                
+                app_instances[key]['instances'].append({
+                    'host': row['host'].strip(),
+                    'port': int(row['port']) if 'port' in row and row['port'] else None,
+                    'webui_url': row['webui_url'].strip() if 'webui_url' in row else None,
+                    'db_host': row['db_host'].strip() if 'db_host' in row else None
+                })
+            
+            data['applications'] = list(app_instances.values())
+            
+        elif file.filename.endswith('.json'):
+            # Handle JSON import
+            content = file.read().decode('utf-8')
+            data = json.loads(content)
         else:
             return jsonify({
                 'status': 'error',
-                'message': 'No data provided. Send either JSON data or upload a JSON file.'
+                'message': 'Invalid file format. Please upload a CSV or JSON file.'
             }), 400
-            
-        if not isinstance(data, dict):
-            return jsonify({
-                'status': 'error',
-                'message': 'Invalid data format. Expected JSON object.'
-            }), 400
-            
+        
         # First create teams
         for team_data in data.get('teams', []):
             if not isinstance(team_data, dict) or 'name' not in team_data:
@@ -165,7 +191,7 @@ def import_data():
             if not team:
                 team = Team(name=team_data['name'])
                 db.session.add(team)
-        db.session.commit()  # Commit teams first
+        db.session.commit()
         
         # Then create applications and instances
         for app_data in data.get('applications', []):
@@ -174,7 +200,7 @@ def import_data():
                 
             team = Team.query.filter_by(name=app_data['team']).first()
             if not team:
-                continue  # Skip if team doesn't exist
+                continue
                 
             app = Application.query.filter_by(name=app_data['name'], team_id=team.id).first()
             if not app:
@@ -184,8 +210,7 @@ def import_data():
                     shutdown_order=app_data.get('shutdown_order')
                 )
                 db.session.add(app)
-                
-            # Create or update instances
+            
             for instance_data in app_data.get('instances', []):
                 if not isinstance(instance_data, dict) or 'host' not in instance_data:
                     continue
@@ -213,11 +238,6 @@ def import_data():
         db.session.commit()
         return jsonify({'status': 'success', 'message': 'Data imported successfully'})
         
-    except json.JSONDecodeError as e:
-        return jsonify({
-            'status': 'error',
-            'message': f'Invalid JSON format: {str(e)}'
-        }), 400
     except Exception as e:
         db.session.rollback()
         return jsonify({
