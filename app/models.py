@@ -41,8 +41,6 @@ class ApplicationInstance(db.Model):
     webui_url = db.Column(db.String(200))
     db_host = db.Column(db.String(200))
     status = db.Column(db.String(20), default='unknown')  # unknown, running, stopped, in_progress
-    last_status = db.Column(db.Boolean, default=False)  # True if running, False if stopped
-    last_checked = db.Column(db.DateTime, default=datetime.utcnow)
     
     __table_args__ = (
         db.UniqueConstraint('application_id', 'host', name='uix_app_host'),

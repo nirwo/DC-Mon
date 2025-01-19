@@ -267,8 +267,7 @@ def check_instance_status(instance_id):
         is_running = ping_host(instance.host)
         
         # Update instance status
-        instance.last_status = is_running
-        instance.last_checked = datetime.utcnow()
+        instance.status = 'running' if is_running else 'stopped'
         db.session.commit()
         
         return jsonify({
@@ -277,6 +276,8 @@ def check_instance_status(instance_id):
             'details': []
         })
     except Exception as e:
+        db.session.rollback()
+        main.logger.error(f"Error checking status: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @main.route('/check_all_status')
@@ -620,7 +621,7 @@ def get_shutdown_sequence(app_id):
         })
         
     except Exception as e:
-        print(f"Error getting shutdown sequence: {str(e)}")  # Debug log
+        main.logger.error(f"Error getting shutdown sequence: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': str(e)
@@ -750,6 +751,7 @@ def delete_selected_applications():
         return jsonify({'status': 'success', 'message': f'Deleted {len(app_ids)} applications'})
     except Exception as e:
         db.session.rollback()
+        main.logger.error(f"Error deleting selected applications: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @main.route('/delete_all_applications', methods=['POST'])
@@ -765,4 +767,5 @@ def delete_all_applications():
         return jsonify({'status': 'success', 'message': 'All applications deleted'})
     except Exception as e:
         db.session.rollback()
+        main.logger.error(f"Error deleting all applications: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
