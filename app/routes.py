@@ -356,9 +356,11 @@ def import_data():
 @main.route('/api/systems/<system_id>/status', methods=['GET'])
 def get_system_status(system_id):
     try:
+        logger.info(f"Getting status for system {system_id}")
         db = get_db()
         system = db.systems.find_one({'_id': ObjectId(system_id)})
         if not system:
+            logger.error(f"System {system_id} not found")
             return jsonify({'success': False, 'error': 'System not found'})
             
         is_running = check_host_status(system['host'])
@@ -373,12 +375,13 @@ def get_system_status(system_id):
             }}
         )
         
+        logger.info(f"System {system_id} status: {status}")
         return jsonify({
             'success': True,
             'status': status
         })
     except Exception as e:
-        logger.error(f"Get system status error: {str(e)}")
+        logger.error(f"Error getting system status: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
 @main.route('/api/import_data', methods=['POST'])
@@ -725,29 +728,40 @@ def get_test_results(app_id):
 @main.route('/api/systems')
 def get_systems():
     try:
+        logger.info("Getting all systems")
         db = get_db()
         systems = []
         for system in db.systems.find():
-            app = db.applications.find_one({'_id': ObjectId(system['application_id'])})
-            if app:
-                team = db.teams.find_one({'_id': ObjectId(app['team_id'])})
-                systems.append({
-                    'id': str(system['_id']),
-                    'name': system.get('name', system['host']),
-                    'host': system['host'],
-                    'status': system.get('status', 'unknown'),
-                    'last_checked': system.get('last_checked', datetime.utcnow()),
-                    'port': system.get('port'),
-                    'webui_url': system.get('webui_url'),
-                    'application': {
-                        'id': str(app['_id']),
-                        'name': app['name']
-                    },
-                    'team': {
-                        'id': str(team['_id']) if team else None,
-                        'name': team['name'] if team else 'Unknown'
-                    } if team else None
-                })
+            try:
+                app = db.applications.find_one({'_id': ObjectId(system['application_id'])})
+                if app:
+                    team = db.teams.find_one({'_id': ObjectId(app['team_id'])})
+                    system_data = {
+                        'id': str(system['_id']),
+                        'name': system.get('name', system['host']),
+                        'host': system['host'],
+                        'status': system.get('status', 'unknown'),
+                        'last_checked': system.get('last_checked', datetime.utcnow()),
+                        'port': system.get('port'),
+                        'webui_url': system.get('webui_url'),
+                        'application': {
+                            'id': str(app['_id']),
+                            'name': app['name']
+                        }
+                    }
+                    if team:
+                        system_data['team'] = {
+                            'id': str(team['_id']),
+                            'name': team['name']
+                        }
+                    systems.append(system_data)
+                else:
+                    logger.warning(f"Application not found for system {system['_id']}")
+            except Exception as e:
+                logger.error(f"Error processing system {system['_id']}: {str(e)}")
+                continue
+                
+        logger.info(f"Returning {len(systems)} systems")
         return jsonify(systems)
     except Exception as e:
         logger.error(f"Error getting systems: {str(e)}")
@@ -756,9 +770,11 @@ def get_systems():
 @main.route('/api/systems/<system_id>/status', methods=['POST'])
 def update_system_status(system_id):
     try:
+        logger.info(f"Updating status for system {system_id}")
         data = request.get_json()
         status = data.get('status')
         if status not in ['running', 'stopped']:
+            logger.error(f"Invalid status: {status}")
             return jsonify({'status': 'error', 'message': 'Invalid status'}), 400
             
         db = get_db()
@@ -771,11 +787,13 @@ def update_system_status(system_id):
         )
         
         if result.modified_count == 0:
+            logger.error(f"System {system_id} not found")
             return jsonify({'status': 'error', 'message': 'System not found'}), 404
             
+        logger.info(f"System {system_id} status updated to {status}")
         return jsonify({'status': 'success'})
     except Exception as e:
-        logger.error(f"Update system status error: {str(e)}")
+        logger.error(f"Error updating system status: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @main.route('/api/applications/<app_id>/state', methods=['POST'])
