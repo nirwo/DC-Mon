@@ -180,178 +180,89 @@ def check_status(instance_id):
 @main.route('/import', methods=['POST'])
 def import_data():
     try:
-        logger.info("Starting import process")
         if 'file' not in request.files:
-            logger.error("No file in request.files")
-            return jsonify({'success': False, 'error': 'No file provided'})
-            
+            return jsonify({'success': False, 'error': 'No file uploaded'}), 400
+        
         file = request.files['file']
-        if not file or not file.filename:
-            logger.error("Empty file or no filename")
-            return jsonify({'success': False, 'error': 'No file selected'})
-            
-        logger.info(f"Received file: {file.filename}")
-        
         if not file.filename.endswith('.csv'):
-            logger.error("File is not a CSV")
-            return jsonify({'success': False, 'error': 'Only CSV files are supported'})
-            
+            return jsonify({'success': False, 'error': 'File must be a CSV'}), 400
+        
+        # Read CSV content
         content = file.read().decode('utf-8')
-        logger.info(f"File content length: {len(content)}")
+        csv_data = list(csv.DictReader(StringIO(content)))
         
-        # Check if file is empty
-        if len(content.strip()) == 0:
-            logger.error("CSV file is empty")
-            return jsonify({'success': False, 'error': 'CSV file is empty'})
-            
-        # Get column mapping if provided
-        mapping = {}
-        if 'mapping' in request.form:
-            try:
-                mapping = json.loads(request.form['mapping'])
-                logger.info(f"Received column mapping: {mapping}")
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid mapping JSON: {str(e)}")
-                return jsonify({'success': False, 'error': 'Invalid column mapping format'})
-        
-        csv_reader = csv.DictReader(StringIO(content))
-        field_names = csv_reader.fieldnames
-        logger.info(f"CSV fields: {field_names}")
-        
-        if not mapping:
-            # If no mapping provided, check if required fields exist in CSV
-            required_fields = ['team_name', 'application_name', 'host']
-            missing_fields = [field for field in required_fields if field not in field_names]
-            if missing_fields:
-                # Return fields for mapping
-                return jsonify({
-                    'success': False,
-                    'error': 'Column mapping required',
-                    'available_fields': field_names,
-                    'required_fields': required_fields,
-                    'missing_fields': missing_fields
-                })
-        else:
-            # Validate mapping
-            required_fields = ['team_name', 'application_name', 'host']
-            missing_mappings = [field for field in required_fields if not mapping.get(field)]
-            if missing_mappings:
-                return jsonify({
-                    'success': False,
-                    'error': f"Missing mappings for required fields: {', '.join(missing_mappings)}"
-                })
-            
-            # Validate that mapped columns exist in CSV
-            invalid_mappings = [field for field, col in mapping.items() if col and col not in field_names]
-            if invalid_mappings:
-                return jsonify({
-                    'success': False,
-                    'error': f"Invalid column mappings: {', '.join(invalid_mappings)}"
-                })
+        if not csv_data:
+            return jsonify({'success': False, 'error': 'CSV file is empty'}), 400
         
         db = get_db()
-        errors = []
-        success_count = 0
+        imported = {'teams': 0, 'applications': 0, 'systems': 0}
         
-        for row_num, row in enumerate(csv_reader, 1):
+        # Process each row
+        for row in csv_data:
             try:
-                logger.info(f"Processing row {row_num}: {row}")
-                
-                # Apply column mapping if provided
-                if mapping:
-                    mapped_row = {}
-                    for field, col in mapping.items():
-                        if col:  # Only map non-empty column selections
-                            mapped_row[field] = row.get(col, '').strip()
-                    row = mapped_row
-                
-                # Check for empty required fields
-                empty_fields = [field for field in required_fields if not row.get(field, '').strip()]
-                if empty_fields:
-                    error_msg = f"Row {row_num}: Missing values for required fields: {', '.join(empty_fields)}"
-                    logger.error(error_msg)
-                    errors.append(error_msg)
-                    continue
-                
                 # Create or get team
-                team_result = db.teams.find_one_and_update(
-                    {'name': row['team_name'].strip()},
-                    {'$setOnInsert': {
-                        'name': row['team_name'].strip(),
-                        'description': row.get('team_description', '').strip()
-                    }},
-                    upsert=True,
-                    return_document=True
-                )
-                logger.info(f"Team created/updated: {team_result}")
+                team_name = row.get('team')
+                if team_name:
+                    team = db.teams.find_one({'name': team_name})
+                    if not team:
+                        team_id = db.teams.insert_one({
+                            'name': team_name,
+                            'description': row.get('team_description', '')
+                        }).inserted_id
+                        imported['teams'] += 1
+                    else:
+                        team_id = team['_id']
                 
                 # Create or get application
-                app_result = db.applications.find_one_and_update(
-                    {
-                        'name': row['application_name'].strip(),
-                        'team_id': str(team_result['_id'])
-                    },
-                    {
-                        '$set': {
-                            'name': row['application_name'].strip(),
-                            'team_id': str(team_result['_id']),
-                            'shutdown_order': int(row.get('shutdown_order', 0)),
-                            'description': row.get('application_description', '').strip()
-                        }
-                    },
-                    upsert=True,
-                    return_document=True
-                )
-                logger.info(f"Application created/updated: {app_result}")
+                app_name = row.get('application')
+                if app_name:
+                    app = db.applications.find_one({
+                        'name': app_name,
+                        'team_id': str(team_id) if team_name else None
+                    })
+                    if not app:
+                        app_id = db.applications.insert_one({
+                            'name': app_name,
+                            'description': row.get('application_description', ''),
+                            'team_id': str(team_id) if team_name else None
+                        }).inserted_id
+                        imported['applications'] += 1
+                    else:
+                        app_id = app['_id']
                 
-                # Create or update system
-                system_data = {
-                    'name': row['host'].strip(),
-                    'host': row['host'].strip(),
-                    'application_id': str(app_result['_id']),
-                    'port': int(row['port']) if row.get('port', '').strip().isdigit() else None,
-                    'webui_url': row.get('webui_url', '').strip() or None,
-                    'status': 'unknown',
-                    'last_checked': datetime.utcnow()
-                }
-                
-                system_result = db.systems.find_one_and_update(
-                    {'host': row['host'].strip(), 'application_id': str(app_result['_id'])},
-                    {'$set': system_data},
-                    upsert=True,
-                    return_document=True
-                )
-                logger.info(f"System created/updated: {system_result}")
-                
-                success_count += 1
-                logger.info(f"Successfully processed row {row_num}")
-                
+                # Create system
+                system_name = row.get('system')
+                if system_name:
+                    existing_system = db.systems.find_one({
+                        'name': system_name,
+                        'application_id': str(app_id) if app_name else None
+                    })
+                    
+                    if not existing_system:
+                        db.systems.insert_one({
+                            'name': system_name,
+                            'host': row.get('host', ''),
+                            'port': int(row['port']) if row.get('port') else None,
+                            'webui_url': row.get('webui_url', ''),
+                            'application_id': str(app_id) if app_name else None,
+                            'status': 'unknown',
+                            'last_checked': None
+                        })
+                        imported['systems'] += 1
+            
             except Exception as e:
-                error_msg = f"Row {row_num}: {str(e)}"
-                logger.error(error_msg)
-                errors.append(error_msg)
+                logger.error(f"Error processing row: {str(e)}")
                 continue
         
-        if success_count == 0:
-            logger.error("No rows were successfully imported")
-            return jsonify({
-                'success': False,
-                'error': 'No rows were successfully imported',
-                'errors': errors
-            })
-        
-        response = {
+        return jsonify({
             'success': True,
-            'message': f"{success_count} items successfully imported",
-            'errors': errors if errors else None
-        }
-        logger.info(f"Import completed. Response: {response}")
-        return jsonify(response)
+            'details': imported,
+            'message': f"Imported {imported['teams']} teams, {imported['applications']} applications, {imported['systems']} systems"
+        })
         
     except Exception as e:
-        error_msg = f"Import error: {str(e)}"
-        logger.error(error_msg)
-        return jsonify({'success': False, 'error': error_msg})
+        logger.error(f"Import error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @main.route('/api/systems/<system_id>/status', methods=['GET'])
 def get_system_status(system_id):

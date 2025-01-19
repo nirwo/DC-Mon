@@ -33,6 +33,11 @@
         <li class="nav-item">
             <a class="nav-link" id="applications-table-tab" data-bs-toggle="tab" href="#applications-table" role="tab">Applications Table</a>
         </li>
+        <li class="nav-item">
+            <button class="btn btn-outline-primary ms-2" data-bs-toggle="modal" data-bs-target="#importModal">
+                <i class="bi bi-upload"></i> Import
+            </button>
+        </li>
     </ul>
 
     <div class="tab-content">
@@ -490,45 +495,26 @@
     </div>
 </div>
 
-<div class="modal fade" id="importModal" tabindex="-1" role="dialog" aria-labelledby="importModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="importModalLabel">Import Data</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title">Import Data</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form id="importForm" enctype="multipart/form-data">
-                <div class="modal-body">
+            <div class="modal-body">
+                <div id="importStatus"></div>
+                <form id="importForm">
                     <div class="mb-3">
-                        <h6>CSV Structure</h6>
-                        <p>Your CSV file should have the following columns:</p>
-                        <ul>
-                            <li><strong>team</strong> (required): Team name</li>
-                            <li><strong>name</strong> (required): Application name</li>
-                            <li><strong>host</strong> (required): Host address</li>
-                            <li><strong>port</strong> (optional): Port number</li>
-                            <li><strong>webui_url</strong> (optional): Web UI URL</li>
-                            <li><strong>shutdown order</strong> (optional): Order for shutdown (number)</li>
-                            <li><strong>dependency</strong> (optional): Comma-separated list of dependent applications</li>
-                        </ul>
-                        <div class="alert alert-info">
-                            <strong>Example CSV:</strong>
-                            <pre class="mb-0">team,name,host,port,webui_url,shutdown order,dependency
-DevOps,MongoDB,mongodb-server,27017,http://mongodb-server:8080,1,
-DevOps,Web Server,web-server,80,http://web-server,2,MongoDB
-DevOps,Load Balancer,lb-server,443,http://lb-server,3,Web Server</pre>
-                        </div>
+                        <label for="file" class="form-label">CSV File</label>
+                        <input type="file" class="form-control" id="file" accept=".csv" required>
+                        <small class="text-muted">
+                            File should have columns: team, application, system, host, port (optional), webui_url (optional)
+                        </small>
                     </div>
-                    <div class="mb-3">
-                        <label for="file" class="form-label">Select CSV File</label>
-                        <input type="file" class="form-control" id="file" name="file" accept=".csv" required>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                     <button type="submit" class="btn btn-primary">Import</button>
-                </div>
-            </form>
+                </form>
+            </div>
         </div>
     </div>
 </div>
@@ -765,6 +751,7 @@ function showAlert(type, message, duration = 5000) {
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     `;
+    
     alertContainer.insertAdjacentHTML('beforeend', alertHtml);
     
     // Auto dismiss after duration
@@ -1320,6 +1307,111 @@ setInterval(updateTeamsList, 10000);
 
 // Initial update
 document.addEventListener('DOMContentLoaded', updateTeamsList);
+
+function handleImport(event) {
+    event.preventDefault();
+    const formData = new FormData();
+    const fileInput = document.querySelector('#file');
+    const importStatus = document.getElementById('importStatus');
+
+    if (!fileInput.files.length) {
+        showAlert('danger', 'Please select a file to import');
+        return;
+    }
+
+    const file = fileInput.files[0];
+    if (!file.name.endsWith('.csv')) {
+        showAlert('danger', 'Please select a CSV file');
+        return;
+    }
+
+    formData.append('file', file);
+    
+    // Show loading state
+    showAlert('info', 'Importing data...', 0);
+    if (importStatus) {
+        importStatus.innerHTML = `
+            <div class="alert alert-info">
+                <div class="spinner-border spinner-border-sm me-2" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                Importing ${file.name}...
+            </div>
+        `;
+    }
+
+    fetch('/import', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        // Clear loading message
+        document.querySelectorAll('.alert-info').forEach(alert => {
+            bootstrap.Alert.getInstance(alert)?.close();
+        });
+
+        if (data.success) {
+            showAlert('success', `Successfully imported data from ${file.name}`);
+            
+            // Show details if there are any
+            if (data.details) {
+                let details = `<div class="mt-2"><strong>Imported:</strong><ul>`;
+                if (data.details.teams) details += `<li>${data.details.teams} teams</li>`;
+                if (data.details.applications) details += `<li>${data.details.applications} applications</li>`;
+                if (data.details.systems) details += `<li>${data.details.systems} systems</li>`;
+                details += '</ul></div>';
+                
+                if (importStatus) {
+                    importStatus.innerHTML = `
+                        <div class="alert alert-success">
+                            <h6>Import Successful!</h6>
+                            ${details}
+                        </div>
+                    `;
+                }
+            }
+            
+            // Refresh lists
+            updateTeamsList();
+            updateSystemsList();
+            
+        } else {
+            showAlert('danger', `Import failed: ${data.error}`);
+            if (importStatus) {
+                importStatus.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h6>Import Failed</h6>
+                        <div class="mt-2">${data.error}</div>
+                    </div>
+                `;
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Import error:', error);
+        showAlert('danger', 'Failed to import file');
+        if (importStatus) {
+            importStatus.innerHTML = `
+                <div class="alert alert-danger">
+                    <h6>Import Error</h6>
+                    <div class="mt-2">An unexpected error occurred during import.</div>
+                </div>
+            `;
+        }
+    })
+    .finally(() => {
+        fileInput.value = '';
+    });
+}
+
+// Add import form listener
+document.addEventListener('DOMContentLoaded', function() {
+    const importForm = document.getElementById('importForm');
+    if (importForm) {
+        importForm.addEventListener('submit', handleImport);
+    }
+});
 </script>
 {% endblock %}
 
