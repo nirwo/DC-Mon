@@ -1,7 +1,7 @@
 from datetime import datetime
 import json
 from flask import Blueprint, render_template, jsonify, request, current_app
-from app.models import Team, Application, ApplicationInstance
+from app.models import Team, Application, ApplicationInstance, System
 from app.database import get_db
 import csv
 import requests
@@ -21,12 +21,22 @@ def index():
     teams = []
     applications = []
     
-    # Count applications per team
+    # Get teams with applications and systems
     for team_data in teams_data:
         team = Team.from_dict(team_data)
-        app_count = db.applications.count_documents({"team_id": ObjectId(str(team._id))})
         team_dict = team.to_dict()
-        team_dict['applications'] = app_count
+        
+        # Get applications for this team
+        team_apps = list(db.applications.find({"team_id": ObjectId(str(team._id))}))
+        team_dict['applications'] = len(team_apps)
+        
+        # Get systems for team's applications
+        systems = []
+        for app in team_apps:
+            app_systems = list(db.systems.find({"application_id": str(app['_id'])}))
+            systems.extend(app_systems)
+        team_dict['systems'] = len(systems)
+        
         teams.append(team_dict)
     
     # Get applications with team info and state
@@ -156,73 +166,63 @@ def check_status(instance_id):
         return jsonify({'status': 'error', 'message': str(e)})
 
 @main.route('/import_data', methods=['POST'])
-def import_data_file():
-    try:
-        if 'file' not in request.files:
-            return jsonify({'status': 'error', 'message': 'No file uploaded'}), 400
-            
-        file = request.files['file']
-        if not file.filename:
-            return jsonify({'status': 'error', 'message': 'No file selected'}), 400
-            
-        if file.filename.endswith('.csv'):
-            # Handle CSV import
-            content = file.read().decode('utf-8')
-            reader = csv.DictReader(content.splitlines())
-            
-            # Group by team and application
-            data = {'teams': [], 'applications': [], 'instances': []}
-            app_instances = {}
-            
-            for row in reader:
-                team_name = row['team'].strip()
-                app_name = row['name'].strip()
-                key = f"{team_name}:{app_name}"
-                
-                if team_name not in [t['name'] for t in data['teams']]:
-                    data['teams'].append({'_id': str(ObjectId()), 'name': team_name})
-                
-                if key not in app_instances:
-                    app_instances[key] = {
-                        '_id': str(ObjectId()),
-                        'name': app_name,
-                        'team_id': next(t['_id'] for t in data['teams'] if t['name'] == team_name)
-                    }
-                    data['applications'].append(app_instances[key])
-                
-                instance = {
-                    'application_id': app_instances[key]['_id'],
-                    'host': row['host'].strip(),
-                    'port': int(row['port']) if 'port' in row and row['port'] else None,
-                    'webui_url': row['webui_url'].strip() if 'webui_url' in row else None,
-                    'db_host': row['db_host'].strip() if 'db_host' in row else None
-                }
-                data['instances'].append(instance)
-            
-        elif file.filename.endswith('.json'):
-            # Handle JSON import
-            content = file.read().decode('utf-8')
-            data = json.loads(content)
-            
-        else:
-            return jsonify({
-                'status': 'error',
-                'message': 'Invalid file format. Please upload a CSV or JSON file.'
-            }), 400
-
-        # Process the data using the API endpoint
-        response = process_import_data(data)
-        if response[1] == 200:  # Check if import was successful
-            return jsonify({'status': 'success', 'message': 'Data imported successfully'})
-        else:
-            return jsonify({'status': 'error', 'message': response[0].get_json()['error']}), response[1]
+def import_data():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
         
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({'error': 'No file selected'}), 400
+        
+    try:
+        content = file.read()
+        data = json.loads(content)
+        db = get_db()
+        
+        # Import teams
+        team_map = {}
+        for team_data in data.get('teams', []):
+            team = Team(name=team_data['name'], description=team_data.get('description'))
+            result = db.teams.insert_one(team.to_dict())
+            team_map[team.name] = str(result.inserted_id)
+        
+        # Import applications
+        app_map = {}
+        for app_data in data.get('applications', []):
+            team_name = app_data.get('team')
+            team_id = team_map.get(team_name) if team_name else None
+            
+            app = Application(
+                name=app_data['name'],
+                team_id=ObjectId(team_id) if team_id else None,
+                state=app_data.get('state', 'notStarted'),
+                enabled=app_data.get('enabled', False)
+            )
+            result = db.applications.insert_one(app.to_dict())
+            app_map[app.name] = str(result.inserted_id)
+        
+        # Import systems
+        for system_data in data.get('systems', []):
+            app_name = system_data.get('application')
+            app_id = app_map.get(app_name)
+            if app_id:
+                system = System(
+                    name=system_data.get('host', system_data.get('name')),
+                    application_id=app_id,
+                    status='stopped',
+                    last_checked=datetime.utcnow()
+                )
+                result = db.systems.insert_one(system.to_dict())
+                
+                # Update application's systems list
+                db.applications.update_one(
+                    {'_id': ObjectId(app_id)},
+                    {'$push': {'systems': str(result.inserted_id)}}
+                )
+        
+        return jsonify({'status': 'success'})
     except Exception as e:
-        logger.error(f"Error in import_data: {str(e)}")
-        return jsonify({
-            'status': 'error',
-            'message': f'Import failed: {str(e)}'
-        }), 500
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/api/import_data', methods=['POST'])
 def process_import_data(data=None):
