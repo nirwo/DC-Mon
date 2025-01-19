@@ -114,10 +114,95 @@ document.addEventListener('DOMContentLoaded', function() {
             searchPlaceholder: "Search systems..."
         }
     });
+
+    // Start automatic status updates
+    startAutoStatusCheck();
 });
 
+// Auto-refresh interval in milliseconds (30 seconds)
+const AUTO_REFRESH_INTERVAL = 30000;
+
+function startAutoStatusCheck() {
+    // Initial check
+    checkAllStatus();
+    
+    // Set up periodic checks
+    setInterval(checkAllStatus, AUTO_REFRESH_INTERVAL);
+}
+
+function updateStatusBadge(statusBadge, status, details = []) {
+    let badgeClass = 'bg-secondary';
+    let icon = 'question-circle';
+    let text = 'Unknown';
+    
+    if (status === 'running') {
+        badgeClass = 'bg-success';
+        icon = 'check-circle';
+        text = 'Running';
+    } else if (status === 'stopped') {
+        badgeClass = 'bg-danger';
+        icon = 'x-circle';
+        text = 'Stopped';
+    } else if (status === 'error') {
+        badgeClass = 'bg-danger';
+        icon = 'exclamation-triangle';
+        text = 'Error';
+    }
+    
+    statusBadge.className = `badge ${badgeClass}`;
+    statusBadge.innerHTML = `<i class="bi bi-${icon} me-1"></i>${text}`;
+    
+    // Update tooltip with details
+    if (details && details.length > 0) {
+        const tooltip = bootstrap.Tooltip.getInstance(statusBadge);
+        if (tooltip) {
+            tooltip.dispose();
+        }
+        statusBadge.setAttribute('data-bs-toggle', 'tooltip');
+        statusBadge.setAttribute('data-bs-placement', 'top');
+        statusBadge.setAttribute('title', details.join('\n'));
+        new bootstrap.Tooltip(statusBadge);
+    }
+}
+
+function checkAllStatus(showLoading = true) {
+    if (showLoading) {
+        // Show loading state for all badges
+        const statusBadges = document.querySelectorAll('.badge');
+        statusBadges.forEach(badge => {
+            badge.className = 'badge bg-warning';
+            badge.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Checking...';
+        });
+    }
+
+    fetch('/check_all_status')
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'error') {
+                console.error('Error:', data.message);
+                return;
+            }
+            
+            data.results.forEach(app => {
+                app.instances.forEach(instance => {
+                    const row = document.querySelector(`[data-instance-id="${instance.id}"]`);
+                    if (!row) return;
+                    
+                    const statusBadge = row.querySelector('.badge');
+                    updateStatusBadge(statusBadge, instance.status, instance.details);
+                });
+            });
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            const statusBadges = document.querySelectorAll('.badge');
+            statusBadges.forEach(badge => {
+                updateStatusBadge(badge, 'error', ['Failed to check status']);
+            });
+        });
+}
+
 function checkInstanceStatus(instanceId) {
-    // Show loading state
     const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
     const statusBadge = row.querySelector('.badge');
     statusBadge.className = 'badge bg-warning';
@@ -126,44 +211,11 @@ function checkInstanceStatus(instanceId) {
     fetch(`/check_instance_status/${instanceId}`)
         .then(response => response.json())
         .then(data => {
-            let badgeClass = 'bg-secondary';
-            let icon = 'question-circle';
-            let text = 'Unknown';
-            
-            if (data.is_running) {
-                badgeClass = 'bg-success';
-                icon = 'check-circle';
-                text = 'Running';
-            } else if (data.status === 'error') {
-                badgeClass = 'bg-danger';
-                icon = 'exclamation-triangle';
-                text = 'Error';
-                console.error(`Error checking ${data.host}:${data.port} - ${data.message}`);
-            } else {
-                badgeClass = 'bg-danger';
-                icon = 'x-circle';
-                text = 'Stopped';
-            }
-            
-            statusBadge.className = `badge ${badgeClass}`;
-            statusBadge.innerHTML = `<i class="bi bi-${icon} me-1"></i>${text}`;
-            
-            // Show details in tooltip if available
-            if (data.details && data.details.length > 0) {
-                const tooltip = bootstrap.Tooltip.getInstance(statusBadge);
-                if (tooltip) {
-                    tooltip.dispose();
-                }
-                statusBadge.setAttribute('data-bs-toggle', 'tooltip');
-                statusBadge.setAttribute('data-bs-placement', 'top');
-                statusBadge.setAttribute('title', data.details.join('\n'));
-                new bootstrap.Tooltip(statusBadge);
-            }
+            updateStatusBadge(statusBadge, data.is_running ? 'running' : 'stopped', data.details);
         })
         .catch(error => {
             console.error('Error:', error);
-            statusBadge.className = 'badge bg-danger';
-            statusBadge.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Error';
+            updateStatusBadge(statusBadge, 'error', ['Failed to check status']);
         });
 }
 
@@ -192,68 +244,6 @@ function confirmInstanceShutdown(instanceId) {
             alert('Failed to shutdown instance');
         });
     }
-}
-
-function checkAllStatus() {
-    // Show loading state for all badges
-    const statusBadges = document.querySelectorAll('.badge');
-    statusBadges.forEach(badge => {
-        badge.className = 'badge bg-warning';
-        badge.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Checking...';
-    });
-
-    fetch('/check_all_status')
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'error') {
-                console.error('Error:', data.message);
-                return;
-            }
-            
-            data.results.forEach(app => {
-                app.instances.forEach(instance => {
-                    const row = document.querySelector(`[data-instance-id="${instance.id}"]`);
-                    if (!row) return;
-                    
-                    const statusBadge = row.querySelector('.badge');
-                    let badgeClass = 'bg-secondary';
-                    let icon = 'question-circle';
-                    let text = 'Unknown';
-                    
-                    if (instance.status === 'running') {
-                        badgeClass = 'bg-success';
-                        icon = 'check-circle';
-                        text = 'Running';
-                    } else if (instance.status === 'stopped') {
-                        badgeClass = 'bg-danger';
-                        icon = 'x-circle';
-                        text = 'Stopped';
-                    }
-                    
-                    statusBadge.className = `badge ${badgeClass}`;
-                    statusBadge.innerHTML = `<i class="bi bi-${icon} me-1"></i>${text}`;
-                    
-                    // Update tooltip with details
-                    if (instance.details && instance.details.length > 0) {
-                        const tooltip = bootstrap.Tooltip.getInstance(statusBadge);
-                        if (tooltip) {
-                            tooltip.dispose();
-                        }
-                        statusBadge.setAttribute('data-bs-toggle', 'tooltip');
-                        statusBadge.setAttribute('data-bs-placement', 'top');
-                        statusBadge.setAttribute('title', instance.details.join('\n'));
-                        new bootstrap.Tooltip(statusBadge);
-                    }
-                });
-            });
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            statusBadges.forEach(badge => {
-                badge.className = 'badge bg-danger';
-                badge.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Error';
-            });
-        });
 }
 
 function confirmDelete(appId, instanceId) {
