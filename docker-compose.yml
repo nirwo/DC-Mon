@@ -4,19 +4,19 @@ services:
   web:
     build: .
     ports:
-      - "5001:5001"
+      - "5000:5000"
     environment:
       - PYTHONPATH=/app
       - FLASK_APP=app
       - FLASK_ENV=development
       - MONGODB_URI=mongodb://mongo:27017/shutdown_manager
-      - FLASK_RUN_PORT=5001
+      - FLASK_RUN_PORT=5000
     volumes:
       - .:/app
     depends_on:
       mongo:
         condition: service_healthy
-    command: bash -c "python app/migrate.py && python -m flask run --host=0.0.0.0 --port=5001"
+    command: bash -c "python app/migrate.py && python -m flask run --host=0.0.0.0 --port=5000"
 
   mongo:
     image: mongo:latest
@@ -26,10 +26,10 @@ services:
       - mongodb_data:/data/db
     healthcheck:
       test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 5s
-      timeout: 5s
+      interval: 10s
+      timeout: 10s
       retries: 5
-      start_period: 5s
+      start_period: 40s
 
   test_runner:
     build: 

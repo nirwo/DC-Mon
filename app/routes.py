@@ -187,10 +187,8 @@ def import_data():
         rows = list(csv_reader)
         
         db = get_db()
-        duplicates = []
-        
-        # First pass: Check for host conflicts (same host, different app/team)
         host_conflicts = {}
+        
         for row in rows:
             host = row.get('host', '').strip()
             if not host:
@@ -199,7 +197,7 @@ def import_data():
             existing = db.systems.find_one({'host': host})
             if existing:
                 app = db.applications.find_one({'_id': ObjectId(existing['application_id'])})
-                if app and (app['name'] != row.get('name') or str(app.get('team_id')) != str(team_id)):
+                if app and app['name'] != row.get('name'):
                     if host not in host_conflicts:
                         team = db.teams.find_one({'_id': ObjectId(app['team_id'])}) if app else None
                         host_conflicts[host] = {
@@ -213,7 +211,7 @@ def import_data():
                             },
                             'new': {
                                 'host': host,
-                                'name': row.get('name'),
+                                'name': host,  # Use host as system name
                                 'team': row.get('team'),
                                 'port': row.get('port'),
                                 'webui_url': row.get('webui_url')
@@ -227,7 +225,6 @@ def import_data():
                 'duplicates': list(host_conflicts.values())
             })
         
-        # No conflicts, proceed with import
         for row in rows:
             team_name = row.get('team', 'Default Team')
             team = db.teams.find_one_and_update(
@@ -243,7 +240,6 @@ def import_data():
             if not app_name or not host:
                 continue
                 
-            # Update or create application
             app_data = {
                 'name': app_name,
                 'team_id': str(team_id),
@@ -259,9 +255,8 @@ def import_data():
             )
             app_id = app['_id']
             
-            # Update or create system
             system_data = {
-                'name': app_name,
+                'name': host,  # Use host as system name
                 'application_id': str(app_id),
                 'host': host,
                 'port': int(row.get('port')) if row.get('port') else None,
@@ -473,17 +468,7 @@ def delete_application_api(app_id):
 
 @main.route('/applications/<app_id>', methods=['DELETE'])
 def delete_application(app_id):
-    db = get_db()
-    try:
-        # Delete all instances
-        db.application_instances.delete_many({'application_id': ObjectId(app_id)})
-        
-        # Delete the application
-        db.applications.delete_one({'_id': ObjectId(app_id)})
-        
-        return jsonify({'status': 'success'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    return delete_application_api(app_id)
 
 @main.route('/update_instance_url/<int:instance_id>', methods=['POST'])
 def update_instance_url(instance_id):
@@ -663,36 +648,38 @@ def update_application():
         logger.error(f"Error in update_application: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@main.route('/api/applications', methods=['POST'])
-def create_application():
+@main.route('/api/applications/create', methods=['POST'])
+def create_application_api():
     try:
-        data = request.get_json()
+        data = request.json
+        if not data or 'name' not in data or 'team_id' not in data:
+            return jsonify({'success': False, 'error': 'Application name and team ID are required'})
+            
         db = get_db()
+        app_data = {
+            'name': data['name'],
+            'team_id': data['team_id'],
+            'shutdown_order': int(data.get('shutdown_order', 0)),
+            'dependencies': data.get('dependencies', [])
+        }
         
-        app = Application(
-            name=data['name'],
-            team_id=data.get('team_id')
+        app = db.applications.find_one_and_update(
+            {'name': data['name'], 'team_id': data['team_id']},
+            {'$set': app_data},
+            upsert=True,
+            return_document=True
         )
         
-        app_dict = app.to_dict()
-        app_dict['_id'] = ObjectId()  # Explicitly set ObjectId
-        
-        result = db.applications.insert_one(app_dict)
-        
-        # Create instance if host is provided
-        if 'host' in data:
-            instance = ApplicationInstance(
-                application_id=str(result.inserted_id),
-                host=data['host'],
-                port=data.get('port'),
-                webui_url=data.get('webui_url'),
-                db_host=data.get('db_host')
-            )
-            db.application_instances.insert_one(instance.to_dict())
-        
-        return jsonify({"message": "Application created successfully", "id": str(result.inserted_id)}), 201
+        return jsonify({'success': True, 'application': {
+            'id': str(app['_id']),
+            'name': app['name'],
+            'team_id': app['team_id'],
+            'shutdown_order': app['shutdown_order'],
+            'dependencies': app['dependencies']
+        }})
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        logger.error(f"Create application error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
 
 @main.route('/api/applications/<app_id>/instances', methods=['POST'])
 def add_instance(app_id):
@@ -761,40 +748,142 @@ def list_teams():
 @main.route('/api/teams', methods=['POST'])
 def create_team():
     try:
-        data = request.get_json()
+        data = request.json
+        if not data or 'name' not in data:
+            return jsonify({'success': False, 'error': 'Team name is required'})
+            
         db = get_db()
+        team = db.teams.find_one_and_update(
+            {'name': data['name']},
+            {'$set': {'name': data['name']}},
+            upsert=True,
+            return_document=True
+        )
         
-        team = Team(name=data['name'])
-        result = db.teams.insert_one(team.to_dict())
-        team._id = result.inserted_id
-        
-        return jsonify({"message": "Team created successfully", "id": str(result.inserted_id)}), 201
+        return jsonify({'success': True, 'team': {'id': str(team['_id']), 'name': team['name']}})
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        logger.error(f"Create team error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@main.route('/api/applications', methods=['POST'])
+def create_application():
+    try:
+        data = request.json
+        if not data or 'name' not in data or 'team_id' not in data:
+            return jsonify({'success': False, 'error': 'Application name and team ID are required'})
+            
+        db = get_db()
+        app_data = {
+            'name': data['name'],
+            'team_id': data['team_id'],
+            'shutdown_order': int(data.get('shutdown_order', 0)),
+            'dependencies': data.get('dependencies', [])
+        }
+        
+        app = db.applications.find_one_and_update(
+            {'name': data['name'], 'team_id': data['team_id']},
+            {'$set': app_data},
+            upsert=True,
+            return_document=True
+        )
+        
+        return jsonify({'success': True, 'application': {
+            'id': str(app['_id']),
+            'name': app['name'],
+            'team_id': app['team_id'],
+            'shutdown_order': app['shutdown_order'],
+            'dependencies': app['dependencies']
+        }})
+    except Exception as e:
+        logger.error(f"Create application error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@main.route('/api/systems', methods=['POST'])
+def create_system():
+    try:
+        data = request.json
+        if not data or 'host' not in data or 'application_id' not in data:
+            return jsonify({'success': False, 'error': 'Host and application ID are required'})
+            
+        db = get_db()
+        system_data = {
+            'name': data.get('name', data['host']),  # Use host as name if not provided
+            'application_id': data['application_id'],
+            'host': data['host'],
+            'port': int(data['port']) if data.get('port') else None,
+            'webui_url': data.get('webui_url'),
+            'status': 'unknown',
+            'last_checked': datetime.utcnow()
+        }
+        
+        system = db.systems.find_one_and_update(
+            {'host': data['host']},
+            {'$set': system_data},
+            upsert=True,
+            return_document=True
+        )
+        
+        return jsonify({'success': True, 'system': {
+            'id': str(system['_id']),
+            'name': system['name'],
+            'application_id': system['application_id'],
+            'host': system['host'],
+            'port': system['port'],
+            'webui_url': system.get('webui_url'),
+            'status': system['status']
+        }})
+    except Exception as e:
+        logger.error(f"Create system error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
 
 @main.route('/api/teams/<team_id>', methods=['DELETE'])
-def delete_team(team_id):
-    db = get_db()
+def delete_team_api(team_id):
     try:
-        # Get all applications for this team
-        apps = list(db.applications.find({'team_id': ObjectId(team_id)}))
+        db = get_db()
         
-        # Delete all systems associated with these applications
-        for app in apps:
-            db.systems.delete_many({'application_id': str(app['_id'])})
+        # Get all applications for this team
+        applications = list(db.applications.find({'team_id': str(team_id)}))
+        app_ids = [str(app['_id']) for app in applications]
+        
+        # Delete all systems belonging to these applications
+        db.systems.delete_many({'application_id': {'$in': app_ids}})
         
         # Delete all applications
-        db.applications.delete_many({'team_id': ObjectId(team_id)})
+        db.applications.delete_many({'team_id': str(team_id)})
         
         # Delete the team
-        result = db.teams.delete_one({'_id': ObjectId(team_id)})
+        db.teams.delete_one({'_id': ObjectId(team_id)})
         
-        if result.deleted_count == 0:
-            return jsonify({'error': 'Team not found'}), 404
-            
-        return jsonify({'status': 'success'})
+        return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Delete team error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@main.route('/api/applications/<app_id>', methods=['DELETE'])
+def delete_application_api(app_id):
+    try:
+        db = get_db()
+        
+        # Delete all systems for this application
+        db.systems.delete_many({'application_id': str(app_id)})
+        
+        # Delete the application
+        db.applications.delete_one({'_id': ObjectId(app_id)})
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Delete application error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@main.route('/api/systems/<system_id>', methods=['DELETE'])
+def delete_system_api(system_id):
+    try:
+        db = get_db()
+        db.systems.delete_one({'_id': ObjectId(system_id)})
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Delete system error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
 
 @main.route('/api/applications/states')
 def get_application_states():
