@@ -204,17 +204,50 @@ def import_data():
             logger.error("CSV file is empty")
             return jsonify({'success': False, 'error': 'CSV file is empty'})
             
+        # Get column mapping if provided
+        mapping = {}
+        if 'mapping' in request.form:
+            try:
+                mapping = json.loads(request.form['mapping'])
+                logger.info(f"Received column mapping: {mapping}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid mapping JSON: {str(e)}")
+                return jsonify({'success': False, 'error': 'Invalid column mapping format'})
+        
         csv_reader = csv.DictReader(StringIO(content))
         field_names = csv_reader.fieldnames
         logger.info(f"CSV fields: {field_names}")
         
-        # Validate required fields
-        required_fields = ['team_name', 'application_name', 'host']
-        missing_fields = [field for field in required_fields if field not in field_names]
-        if missing_fields:
-            error_msg = f"CSV is missing required columns: {', '.join(missing_fields)}"
-            logger.error(error_msg)
-            return jsonify({'success': False, 'error': error_msg})
+        if not mapping:
+            # If no mapping provided, check if required fields exist in CSV
+            required_fields = ['team_name', 'application_name', 'host']
+            missing_fields = [field for field in required_fields if field not in field_names]
+            if missing_fields:
+                # Return fields for mapping
+                return jsonify({
+                    'success': False,
+                    'error': 'Column mapping required',
+                    'available_fields': field_names,
+                    'required_fields': required_fields,
+                    'missing_fields': missing_fields
+                })
+        else:
+            # Validate mapping
+            required_fields = ['team_name', 'application_name', 'host']
+            missing_mappings = [field for field in required_fields if not mapping.get(field)]
+            if missing_mappings:
+                return jsonify({
+                    'success': False,
+                    'error': f"Missing mappings for required fields: {', '.join(missing_mappings)}"
+                })
+            
+            # Validate that mapped columns exist in CSV
+            invalid_mappings = [field for field, col in mapping.items() if col and col not in field_names]
+            if invalid_mappings:
+                return jsonify({
+                    'success': False,
+                    'error': f"Invalid column mappings: {', '.join(invalid_mappings)}"
+                })
         
         db = get_db()
         errors = []
@@ -223,6 +256,14 @@ def import_data():
         for row_num, row in enumerate(csv_reader, 1):
             try:
                 logger.info(f"Processing row {row_num}: {row}")
+                
+                # Apply column mapping if provided
+                if mapping:
+                    mapped_row = {}
+                    for field, col in mapping.items():
+                        if col:  # Only map non-empty column selections
+                            mapped_row[field] = row.get(col, '').strip()
+                    row = mapped_row
                 
                 # Check for empty required fields
                 empty_fields = [field for field in required_fields if not row.get(field, '').strip()]
@@ -985,3 +1026,71 @@ def delete_system_api(system_id):
     except Exception as e:
         logger.error(f"Delete system error: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
+
+@main.route('/api/applications/<app_id>/test', methods=['POST'])
+def run_application_test(app_id):
+    try:
+        db = get_db()
+        app = db.applications.find_one({'_id': ObjectId(app_id)})
+        if not app:
+            return jsonify({'success': False, 'error': 'Application not found'}), 404
+            
+        # Create test job
+        test_job = {
+            'app_id': str(ObjectId(app_id)),
+            'status': 'pending',
+            'created_at': datetime.utcnow()
+        }
+        
+        result = db.test_jobs.insert_one(test_job)
+        
+        # Update application status
+        db.applications.update_one(
+            {'_id': ObjectId(app_id)},
+            {'$set': {
+                'test_status': 'pending',
+                'last_tested': datetime.utcnow()
+            }}
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': 'Test job created',
+            'job_id': str(result.inserted_id)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error creating test job: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@main.route('/api/applications/<app_id>/test/status', methods=['GET'])
+def get_test_status(app_id):
+    try:
+        db = get_db()
+        app = db.applications.find_one({'_id': ObjectId(app_id)})
+        if not app:
+            return jsonify({'success': False, 'error': 'Application not found'}), 404
+            
+        # Get latest test job
+        test_job = db.test_jobs.find_one(
+            {'app_id': str(ObjectId(app_id))},
+            sort=[('created_at', -1)]
+        )
+        
+        # Get latest test results
+        test_results = db.test_results.find_one(
+            {'app_id': str(ObjectId(app_id))},
+            sort=[('created_at', -1)]
+        )
+        
+        return jsonify({
+            'success': True,
+            'status': app.get('test_status', 'unknown'),
+            'last_tested': app.get('last_tested'),
+            'job_status': test_job['status'] if test_job else None,
+            'results': test_results['results'] if test_results else None
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting test status: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500

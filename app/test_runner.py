@@ -1,7 +1,7 @@
 import time
 import logging
 from datetime import datetime
-from pymongo import MongoClient
+from pymongo import MongoClient, ObjectId
 import os
 import subprocess
 import json
@@ -19,48 +19,121 @@ def run_test_suite(app_id):
     
     try:
         # Get application details
-        app = db.applications.find_one({'_id': app_id})
+        app = db.applications.find_one({'_id': ObjectId(app_id)})
         if not app:
             raise Exception(f"Application {app_id} not found")
             
+        logger.info(f"Running tests for application: {app['name']}")
         test_results = []
         
-        # Basic connectivity test
-        try:
-            # Add your test logic here
+        # Get all systems for this application
+        systems = list(db.systems.find({'application_id': str(app['_id'])}))
+        if not systems:
+            logger.warning(f"No systems found for application {app['name']}")
             test_results.append({
-                'name': 'Connectivity Test',
-                'description': 'Testing basic connectivity',
-                'passed': True
-            })
-        except Exception as e:
-            test_results.append({
-                'name': 'Connectivity Test',
-                'description': 'Testing basic connectivity',
+                'name': 'System Check',
+                'description': 'Checking if application has systems',
                 'passed': False,
-                'error': str(e)
+                'error': 'No systems found for this application'
+            })
+        else:
+            test_results.append({
+                'name': 'System Check',
+                'description': 'Checking if application has systems',
+                'passed': True,
+                'message': f"Found {len(systems)} systems"
             })
             
+            # Test each system
+            for system in systems:
+                try:
+                    # Basic connectivity test (ping)
+                    host = system['host']
+                    logger.info(f"Testing connectivity to {host}")
+                    
+                    ping_cmd = ['ping', '-c', '1', '-W', '2', host]
+                    result = subprocess.run(ping_cmd, capture_output=True, text=True)
+                    
+                    if result.returncode == 0:
+                        test_results.append({
+                            'name': f"Connectivity Test - {host}",
+                            'description': 'Testing basic connectivity',
+                            'passed': True,
+                            'message': 'Host is reachable'
+                        })
+                        
+                        # If port is specified, test port connectivity
+                        if system.get('port'):
+                            port = system['port']
+                            logger.info(f"Testing port {port} on {host}")
+                            
+                            try:
+                                import socket
+                                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                                sock.settimeout(2)
+                                result = sock.connect_ex((host, port))
+                                sock.close()
+                                
+                                if result == 0:
+                                    test_results.append({
+                                        'name': f"Port Test - {host}:{port}",
+                                        'description': f"Testing port {port} connectivity",
+                                        'passed': True,
+                                        'message': f"Port {port} is open"
+                                    })
+                                else:
+                                    test_results.append({
+                                        'name': f"Port Test - {host}:{port}",
+                                        'description': f"Testing port {port} connectivity",
+                                        'passed': False,
+                                        'error': f"Port {port} is closed"
+                                    })
+                            except Exception as e:
+                                test_results.append({
+                                    'name': f"Port Test - {host}:{port}",
+                                    'description': f"Testing port {port} connectivity",
+                                    'passed': False,
+                                    'error': f"Port test failed: {str(e)}"
+                                })
+                    else:
+                        test_results.append({
+                            'name': f"Connectivity Test - {host}",
+                            'description': 'Testing basic connectivity',
+                            'passed': False,
+                            'error': 'Host is not reachable'
+                        })
+                        
+                except Exception as e:
+                    test_results.append({
+                        'name': f"System Test - {system['host']}",
+                        'description': 'Testing system connectivity',
+                        'passed': False,
+                        'error': str(e)
+                    })
+        
         # Save test results
         db.test_results.insert_one({
-            'app_id': str(app_id),
+            'app_id': str(app['_id']),
             'results': test_results,
             'created_at': datetime.utcnow()
         })
         
         # Update application test status
+        all_passed = all(r['passed'] for r in test_results)
         db.applications.update_one(
-            {'_id': app_id},
+            {'_id': ObjectId(app_id)},
             {'$set': {
-                'test_status': 'passed' if all(r['passed'] for r in test_results) else 'failed',
+                'test_status': 'passed' if all_passed else 'failed',
                 'last_tested': datetime.utcnow()
             }}
         )
         
+        logger.info(f"Tests completed for application {app['name']} - Status: {'passed' if all_passed else 'failed'}")
+        
     except Exception as e:
         logger.error(f"Error running tests for application {app_id}: {str(e)}")
         db.applications.update_one(
-            {'_id': app_id},
+            {'_id': ObjectId(app_id)},
             {'$set': {
                 'test_status': 'error',
                 'last_tested': datetime.utcnow()

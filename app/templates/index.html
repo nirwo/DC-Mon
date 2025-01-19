@@ -57,6 +57,7 @@
                                             <input class="form-check-input" type="checkbox" id="toggle-{{ app._id }}" {% if app.enabled %}checked{% endif %} onchange="toggleApplication('{{ app._id }}')">
                                         </div>
                                         <button class="btn btn-danger btn-sm" onclick="deleteApplication('{{ app._id }}')">Delete</button>
+                                        <button class="btn btn-primary btn-sm" onclick="runTest('{{ app._id }}')">Run Test</button>
                                     </div>
                                     {% if app.systems %}
                                     <div class="mt-2">
@@ -95,6 +96,10 @@
                                             {% endfor %}
                                         </ul>
                                         {% endif %}
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted">Test Status:</small>
+                                        <td class="test-status"></td>
                                     </div>
                                 </div>
                             </div>
@@ -122,6 +127,7 @@
                                             <input class="form-check-input" type="checkbox" id="toggle-{{ app._id }}" {% if app.enabled %}checked{% endif %} onchange="toggleApplication('{{ app._id }}')">
                                         </div>
                                         <button class="btn btn-danger btn-sm" onclick="deleteApplication('{{ app._id }}')">Delete</button>
+                                        <button class="btn btn-primary btn-sm" onclick="runTest('{{ app._id }}')">Run Test</button>
                                     </div>
                                     {% if app.systems %}
                                     <div class="mt-2">
@@ -160,6 +166,10 @@
                                             {% endfor %}
                                         </ul>
                                         {% endif %}
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted">Test Status:</small>
+                                        <td class="test-status"></td>
                                     </div>
                                 </div>
                             </div>
@@ -187,6 +197,7 @@
                                             <input class="form-check-input" type="checkbox" id="toggle-{{ app._id }}" {% if app.enabled %}checked{% endif %} onchange="toggleApplication('{{ app._id }}')">
                                         </div>
                                         <button class="btn btn-danger btn-sm" onclick="deleteApplication('{{ app._id }}')">Delete</button>
+                                        <button class="btn btn-primary btn-sm" onclick="runTest('{{ app._id }}')">Run Test</button>
                                     </div>
                                     {% if app.systems %}
                                     <div class="mt-2">
@@ -225,6 +236,10 @@
                                             {% endfor %}
                                         </ul>
                                         {% endif %}
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted">Test Status:</small>
+                                        <td class="test-status"></td>
                                     </div>
                                 </div>
                             </div>
@@ -355,6 +370,7 @@
                                             {{ 'Disable' if app.enabled else 'Enable' }}
                                         </button>
                                         <button onclick="deleteApplication('{{ app._id }}')" class="delete-btn">Delete</button>
+                                        <button class="btn btn-primary btn-sm" onclick="runTest('{{ app._id }}')">Run Test</button>
                                     </div>
                                 </td>
                             </tr>
@@ -992,49 +1008,102 @@ function updateSystemsList() {
     });
 }
 
-function toggleSystemStatus(systemId, element) {
-    const newStatus = element.checked ? 'running' : 'stopped';
-    
-    fetch(`/api/systems/${systemId}/status`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            status: newStatus
-        })
+function runTest(appId) {
+    const button = document.querySelector(`button[onclick="runTest('${appId}')"]`);
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Running...';
+
+    fetch(`/api/applications/${appId}/test`, {
+        method: 'POST'
     })
     .then(response => response.json())
     .then(data => {
-        if (data.status === 'success') {
-            showAlert('success', `System ${newStatus}`);
-            updateSystemsList(); // Refresh the list
+        if (data.success) {
+            showAlert('info', 'Test started. Please wait...', 0);
+            pollTestStatus(appId);
         } else {
-            element.checked = !element.checked;
-            showAlert('danger', 'Failed to update system status');
+            showAlert('danger', `Failed to start test: ${data.error}`, 0);
+            button.disabled = false;
+            button.textContent = 'Run Test';
         }
     })
     .catch(error => {
-        console.error('Error:', error);
-        element.checked = !element.checked;
-        showAlert('danger', 'Failed to update system status');
+        console.error('Test error:', error);
+        showAlert('danger', 'Failed to start test', 0);
+        button.disabled = false;
+        button.textContent = 'Run Test';
     });
 }
 
+function pollTestStatus(appId, interval = 2000) {
+    const button = document.querySelector(`button[onclick="runTest('${appId}')"]`);
+    const statusCell = document.querySelector(`tr[data-app-id="${appId}"] td.test-status`);
+
+    fetch(`/api/applications/${appId}/test/status`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (statusCell) {
+                    let statusHtml = `<span class="badge bg-${getStatusBadgeClass(data.status)}">${data.status}</span>`;
+                    if (data.results) {
+                        statusHtml += '<br><small class="text-muted">' + 
+                            data.results.map(r => `${r.name}: ${r.passed ? '✓' : '✗'}`).join(', ') +
+                            '</small>';
+                    }
+                    statusCell.innerHTML = statusHtml;
+                }
+
+                if (data.job_status === 'pending' || data.job_status === 'running') {
+                    setTimeout(() => pollTestStatus(appId, interval), interval);
+                } else {
+                    button.disabled = false;
+                    button.textContent = 'Run Test';
+
+                    if (data.job_status === 'completed') {
+                        if (data.status === 'passed') {
+                            showAlert('success', 'Test completed successfully', 5000);
+                        } else {
+                            showAlert('warning', 'Test completed with failures', 0);
+                        }
+                    } else if (data.job_status === 'failed') {
+                        showAlert('danger', 'Test failed to complete', 0);
+                    }
+                }
+            } else {
+                button.disabled = false;
+                button.textContent = 'Run Test';
+                showAlert('danger', `Failed to get test status: ${data.error}`, 0);
+            }
+        })
+        .catch(error => {
+            console.error('Status check error:', error);
+            button.disabled = false;
+            button.textContent = 'Run Test';
+            showAlert('danger', 'Failed to check test status', 0);
+        });
+}
+
+function getStatusBadgeClass(status) {
+    switch (status) {
+        case 'passed': return 'success';
+        case 'failed': return 'danger';
+        case 'pending': return 'warning';
+        case 'running': return 'info';
+        case 'error': return 'danger';
+        default: return 'secondary';
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
-    // Initial systems update
     updateSystemsList();
-    
-    // Update systems list periodically
+
     setInterval(updateSystemsList, 30000);
-    
-    // Update when switching to systems tab
+
     const systemsTab = document.querySelector('a[href="#systems"]');
     if (systemsTab) {
         systemsTab.addEventListener('shown.bs.tab', updateSystemsList);
     }
 
-    // Import form handling
     const importForm = document.getElementById('importForm');
     if (importForm) {
         importForm.addEventListener('submit', handleImport);
@@ -1045,23 +1114,22 @@ function handleImport(event) {
     event.preventDefault();
     const formData = new FormData();
     const fileInput = document.querySelector('#file');
-    
+
     if (!fileInput.files.length) {
         showAlert('danger', 'Please select a file to import', 0);
         return;
     }
-    
+
     const file = fileInput.files[0];
     if (!file.name.endsWith('.csv')) {
         showAlert('danger', 'Please select a CSV file', 0);
         return;
     }
-    
+
     formData.append('file', file);
-    
-    // Show loading alert
+
     showAlert('info', 'Importing file...', 0);
-    
+
     fetch('/import', {
         method: 'POST',
         body: formData
@@ -1069,21 +1137,19 @@ function handleImport(event) {
     .then(response => response.json())
     .then(data => {
         console.log('Import response:', data);
-        
-        // Remove loading alert
+
         document.querySelectorAll('.alert-info').forEach(alert => {
             bootstrap.Alert.getInstance(alert)?.close();
         });
-        
+
         if (data.success) {
             showAlert('success', `Successfully imported ${data.message}`, 0);
-            
+
             if (data.errors && data.errors.length > 0) {
                 const errorList = data.errors.join('\n\n');
                 showAlert('warning', `Import completed with warnings:\n${errorList}`, 0);
             }
-            
-            // Refresh the page after successful import
+
             setTimeout(() => location.reload(), 3000);
         } else {
             showAlert('danger', `Import failed: ${data.error}`, 0);
@@ -1094,9 +1160,7 @@ function handleImport(event) {
         showAlert('danger', 'Failed to import file. Check console for details.', 0);
     })
     .finally(() => {
-        // Clear the file input
         fileInput.value = '';
-        // Close the modal
         const importModal = bootstrap.Modal.getInstance(document.getElementById('importModal'));
         if (importModal) {
             importModal.hide();
