@@ -7,6 +7,7 @@ import csv
 import requests
 import logging
 from bson import ObjectId
+from io import StringIO
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -168,163 +169,63 @@ def check_status(instance_id):
         logger.error(f"Error in check_status: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)})
 
-@main.route('/import_data', methods=['POST'])
+@main.route('/import', methods=['POST'])
 def import_data():
     if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-        
+        return jsonify({'success': False, 'error': 'No file uploaded'})
+    
     file = request.files['file']
-    if not file.filename:
-        return jsonify({'error': 'No file selected'}), 400
-        
+    if file.filename == '':
+        return jsonify({'success': False, 'error': 'No file selected'})
+    
+    if not file.filename.endswith('.csv'):
+        return jsonify({'success': False, 'error': 'Only CSV files are allowed'})
+    
     try:
-        content = file.stream.read().decode('utf-8')
-        
-        # Try parsing as JSON first
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError:
-            # If not JSON, try CSV
-            try:
-                reader = csv.DictReader(content.splitlines())
-                data = {'teams': [], 'applications': [], 'systems': []}
-                team_map = {}
-                app_map = {}
-                
-                # First pass: collect all applications to establish dependencies
-                apps_data = {}
-                for row in reader:
-                    team_name = row.get('team', '').strip()
-                    app_name = row.get('name', '').strip()
-                    host = row.get('host', '').strip()
-                    port = row.get('port', '').strip()
-                    webui_url = row.get('webui_url', '').strip()
-                    shutdown_order = row.get('shutdown order', '0').strip()
-                    dependency = row.get('dependency', '').strip()
-                    
-                    if not all([team_name, app_name, host]):
-                        continue
-                    
-                    # Add team if new
-                    if team_name not in team_map:
-                        team = Team(name=team_name)
-                        data['teams'].append(team.to_dict())
-                        team_map[team_name] = True
-                    
-                    # Add application if new
-                    app_key = f"{team_name}:{app_name}"
-                    if app_key not in app_map:
-                        app_data = {
-                            'name': app_name,
-                            'team': team_name,
-                            'state': 'notStarted',
-                            'enabled': True,
-                            'shutdown_order': int(shutdown_order) if shutdown_order.isdigit() else 0,
-                            'dependencies': [],
-                            'systems': []
-                        }
-                        if dependency:
-                            app_data['dependencies'].append(dependency)
-                        
-                        apps_data[app_name] = app_data
-                        app_map[app_key] = True
-                    elif dependency and dependency not in apps_data[app_name]['dependencies']:
-                        apps_data[app_name]['dependencies'].append(dependency)
-                    
-                    # Add system
-                    system_data = {
-                        'name': host,
-                        'application': app_name,
-                        'port': port if port else None,
-                        'webui_url': webui_url if webui_url else None,
-                        'status': 'unknown'
-                    }
-                    data['systems'].append(system_data)
-                
-                # Add applications to data
-                data['applications'] = list(apps_data.values())
-                
-            except Exception as e:
-                return jsonify({'error': f'Invalid CSV format: {str(e)}'}), 400
+        # Read CSV content
+        content = file.read().decode('utf-8')
+        csv_reader = csv.DictReader(StringIO(content))
         
         db = get_db()
         
-        # Import teams
-        team_map = {}
-        for team_data in data.get('teams', []):
-            # Check if team already exists
-            existing_team = db.teams.find_one({'name': team_data['name']})
-            if existing_team:
-                team_map[team_data['name']] = str(existing_team['_id'])
+        for row in csv_reader:
+            # Get or create team
+            team_name = row.get('team', 'Default Team')
+            team = db.teams.find_one({'name': team_name})
+            if not team:
+                team = {'name': team_name}
+                team_id = db.teams.insert_one(team).inserted_id
+            else:
+                team_id = team['_id']
+            
+            # Create application
+            app_name = row.get('name')
+            if not app_name:
                 continue
                 
-            team = Team(name=team_data['name'])
-            result = db.teams.insert_one(team.to_dict())
-            team_map[team.name] = str(result.inserted_id)
-        
-        # Import applications
-        app_map = {}
-        for app_data in data.get('applications', []):
-            team_name = app_data.get('team')
-            team_id = team_map.get(team_name)
+            app = {
+                'name': app_name,
+                'team_id': str(team_id),
+                'shutdown_order': int(row.get('shutdown order', 0)) if row.get('shutdown order') else 0,
+                'dependencies': [dep.strip() for dep in row.get('dependency', '').split(',') if dep.strip()]
+            }
+            app_id = db.applications.insert_one(app).inserted_id
             
-            # Check if application already exists
-            existing_app = db.applications.find_one({
-                'name': app_data['name'],
-                'team_id': ObjectId(team_id) if team_id else None
-            })
-            
-            if existing_app:
-                app_map[app_data['name']] = str(existing_app['_id'])
-                # Update dependencies if needed
-                if app_data.get('dependencies'):
-                    db.applications.update_one(
-                        {'_id': existing_app['_id']},
-                        {'$set': {
-                            'dependencies': app_data['dependencies'],
-                            'shutdown_order': app_data.get('shutdown_order', 0)
-                        }}
-                    )
-                continue
-            
-            app = Application(
-                name=app_data['name'],
-                team_id=ObjectId(team_id) if team_id else None,
-                state=app_data.get('state', 'notStarted'),
-                enabled=app_data.get('enabled', True),
-                shutdown_order=app_data.get('shutdown_order', 0),
-                dependencies=app_data.get('dependencies', [])
-            )
-            result = db.applications.insert_one(app.to_dict())
-            app_map[app.name] = str(result.inserted_id)
+            # Create system
+            system = {
+                'name': app_name,
+                'application_id': str(app_id),
+                'host': row.get('host', ''),
+                'port': int(row.get('port')) if row.get('port') else None,
+                'webui_url': row.get('webui_url'),
+                'status': 'unknown',
+                'last_checked': datetime.utcnow()
+            }
+            db.systems.insert_one(system)
         
-        # Import systems
-        for system_data in data.get('systems', []):
-            app_name = system_data.get('application')
-            app_id = app_map.get(app_name)
-            if app_id:
-                # Check if system already exists
-                existing_system = db.systems.find_one({
-                    'name': system_data['name'],
-                    'application_id': app_id
-                })
-                
-                if existing_system:
-                    continue
-                
-                system = System(
-                    name=system_data['name'],
-                    application_id=app_id,
-                    port=system_data.get('port'),
-                    webui_url=system_data.get('webui_url'),
-                    status='unknown',
-                    last_checked=datetime.utcnow()
-                )
-                result = db.systems.insert_one(system.to_dict())
-        
-        return jsonify({'status': 'success'})
+        return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)})
 
 @main.route('/api/import_data', methods=['POST'])
 def process_import_data(data=None):

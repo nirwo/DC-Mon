@@ -572,76 +572,84 @@ function deleteSystem(systemId) {
     }
 }
 
-function importData() {
-    const fileInput = document.getElementById('importFile');
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-    
-    fetch('/import_data', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            alert('Import failed: ' + data.error);
-        } else {
-            alert('Data imported successfully');
-            location.reload();
-        }
-    })
-    .catch(error => {
-        alert('Import failed: ' + error);
-    });
-}
-
-function updateSystemsList(systems) {
-    let html = '';
-    systems.forEach(system => {
-        html += `
-            <div class="list-group-item">
-                <div class="d-flex w-100 justify-content-between">
-                    <div>
-                        <h6 class="mb-1">${system.name}</h6>
-                        <small class="text-muted">Last checked: ${new Date(system.last_checked).toLocaleString()}</small>
-                    </div>
-                    ${system.webui_url ? `<a href="${system.webui_url}" target="_blank" class="system-url">🔗</a>` : ''}
-                    ${system.port ? `<span class="port-badge">:${system.port}</span>` : ''}
-                    <span class="badge bg-${system.status === 'running' ? 'success' : 'secondary'}">
-                        ${system.status}
-                    </span>
-                </div>
-            </div>
-        `;
-    });
-    return html;
-}
-
-function updateSystemsDisplay() {
-    fetch('/api/systems')
-        .then(response => response.json())
-        .then(systems => {
-            const runningList = document.getElementById('runningSystemsList');
-            const stoppedList = document.getElementById('stoppedSystemsList');
-            
-            if (runningList && stoppedList) {
-                runningList.innerHTML = '';
-                stoppedList.innerHTML = '';
-                
-                const runningSystems = systems.filter(system => system.status === 'running');
-                const stoppedSystems = systems.filter(system => system.status !== 'running');
-                
-                runningList.innerHTML = updateSystemsList(runningSystems);
-                stoppedList.innerHTML = updateSystemsList(stoppedSystems);
-            }
-        });
-}
-
-// Update systems status every 30 seconds
-setInterval(updateSystemsDisplay, 30000);
-
-// Initial systems update
 document.addEventListener('DOMContentLoaded', function() {
+    const importModal = new bootstrap.Modal(document.getElementById('importModal'));
+    
+    function handleImport(event) {
+        event.preventDefault();
+        const formData = new FormData(event.target);
+        
+        fetch('/import', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            importModal.hide();
+            if (data.success) {
+                showAlert('success', 'Import successful');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showAlert('danger', 'Import failed: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('danger', 'Import failed: ' + error.message);
+        });
+    }
+
+    const importForm = document.getElementById('importForm');
+    if (importForm) {
+        importForm.addEventListener('submit', handleImport);
+    }
+
+    function updateSystemsList(systems) {
+        let html = '';
+        systems.forEach(system => {
+            html += `
+                <div class="list-group-item">
+                    <div class="d-flex w-100 justify-content-between">
+                        <div>
+                            <h6 class="mb-1">${system.name}</h6>
+                            <small class="text-muted">Last checked: ${new Date(system.last_checked).toLocaleString()}</small>
+                        </div>
+                        ${system.webui_url ? `<a href="${system.webui_url}" target="_blank" class="system-url">🔗</a>` : ''}
+                        ${system.port ? `<span class="port-badge">:${system.port}</span>` : ''}
+                        <span class="badge bg-${system.status === 'running' ? 'success' : 'secondary'}">
+                            ${system.status}
+                        </span>
+                    </div>
+                </div>
+            `;
+        });
+        return html;
+    }
+
+    function updateSystemsDisplay() {
+        fetch('/api/systems')
+            .then(response => response.json())
+            .then(systems => {
+                const runningList = document.getElementById('runningSystemsList');
+                const stoppedList = document.getElementById('stoppedSystemsList');
+                
+                if (runningList && stoppedList) {
+                    runningList.innerHTML = '';
+                    stoppedList.innerHTML = '';
+                    
+                    const runningSystems = systems.filter(system => system.status === 'running');
+                    const stoppedSystems = systems.filter(system => system.status !== 'running');
+                    
+                    runningList.innerHTML = updateSystemsList(runningSystems);
+                    stoppedList.innerHTML = updateSystemsList(stoppedSystems);
+                }
+            });
+    }
+
+    // Update systems status every 30 seconds
+    setInterval(updateSystemsDisplay, 30000);
+
+    // Initial systems update
     updateSystemsDisplay();
     
     // Update systems when switching to systems tab
