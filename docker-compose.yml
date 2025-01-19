@@ -4,11 +4,12 @@ services:
   web:
     build: .
     ports:
-      - "5001:5000"
+      - "5001:5001"
     environment:
       - FLASK_APP=app
       - FLASK_ENV=development
       - MONGODB_URI=mongodb://mongo:27017/shutdown_manager
+      - FLASK_RUN_PORT=5001
     volumes:
       - .:/app
     depends_on:
