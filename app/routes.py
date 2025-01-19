@@ -6,6 +6,7 @@ import socket
 import requests
 import threading
 import time
+import json
 
 main = Blueprint('main', __name__)
 
@@ -127,161 +128,101 @@ def systems():
     instances = ApplicationInstance.query.join(Application).join(Team).order_by(Team.name, Application.name).all()
     return render_template('systems.html', instances=instances)
 
-@main.route('/import_apps', methods=['POST'])
-def import_apps():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-    
-    file = request.files['file']
-    if not file or not file.filename.endswith('.csv'):
-        return jsonify({'error': 'Invalid file format. Please upload a CSV file.'}), 400
-    
-    merge_mode = request.form.get('merge_mode', 'skip')
-    encoding = request.form.get('encoding', 'utf-8')
-    
-    if merge_mode not in ['skip', 'merge', 'replace']:
-        return jsonify({'error': 'Invalid merge mode'}), 400
-    
+@main.route('/import_data', methods=['POST'])
+def import_data():
     try:
-        # Read CSV file with specified encoding
-        try:
-            csv_data = file.read().decode(encoding).splitlines()
-        except UnicodeDecodeError:
-            # Try common encodings if specified one fails
-            for enc in ['utf-8', 'latin1', 'cp1252', 'iso-8859-1']:
-                try:
-                    file.seek(0)
-                    csv_data = file.read().decode(enc).splitlines()
-                    encoding = enc
-                    break
-                except UnicodeDecodeError:
-                    continue
+        # Try to get JSON data first
+        if request.is_json:
+            data = request.get_json()
+        # If not JSON, try form data
+        elif 'file' in request.files:
+            file = request.files['file']
+            if file.filename.endswith('.json'):
+                data = json.loads(file.read().decode('utf-8'))
             else:
-                return jsonify({'error': 'Unable to decode file. Please specify correct encoding.'}), 400
-        
-        # Validate headers
-        required_fields = ['name', 'team', 'host']
-        missing_fields = [field for field in required_fields if field not in csv.DictReader(csv_data).fieldnames]
-        if missing_fields:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Invalid file format. Please upload a JSON file.'
+                }), 400
+        else:
             return jsonify({
-                'error': f'Missing required fields: {", ".join(missing_fields)}'
+                'status': 'error',
+                'message': 'No data provided. Send either JSON data or upload a JSON file.'
             }), 400
-        
-        # Start transaction
-        imported = updated = skipped = 0
-        errors = []
-        
-        # Cache teams and apps for better performance
-        team_cache = {}
-        app_cache = {}
-        
-        # Store dependencies for later processing
-        dependencies_to_process = []
-        
-        # Delete all if replace mode
-        if merge_mode == 'replace':
-            ApplicationInstance.query.delete()
-            Application.query.delete()
-            Team.query.delete()
-            db.session.commit()
-        
-        # Process rows in chunks
-        CHUNK_SIZE = 100
-        rows = list(csv.DictReader(csv_data))
-        total_rows = len(rows)
-        
-        for i in range(0, total_rows, CHUNK_SIZE):
-            chunk = rows[i:i + CHUNK_SIZE]
             
-            # Process each row in the chunk
-            for row in chunk:
-                try:
-                    # Get or create team
-                    team_name = row['team'].strip()
-                    if team_name in team_cache:
-                        team = team_cache[team_name]
-                    else:
-                        team = Team.query.filter_by(name=team_name).first()
-                        if not team:
-                            team = Team(name=team_name)
-                            db.session.add(team)
-                            team_cache[team_name] = team
-                    
-                    # Get or create application
-                    app_name = row['name'].strip()
-                    app_key = f"{team_name}:{app_name}"
-                    
-                    if app_key in app_cache:
-                        app = app_cache[app_key]
-                        if merge_mode == 'skip':
-                            skipped += 1
-                            continue
-                    else:
-                        app = Application.query.filter_by(name=app_name, team_id=team.id).first()
-                        if app:
-                            if merge_mode == 'skip':
-                                skipped += 1
-                                continue
-                            updated += 1
-                        else:
-                            app = Application(name=app_name, team=team)
-                            db.session.add(app)
-                            imported += 1
-                        app_cache[app_key] = app
-                    
-                    # Update application fields
-                    if 'shutdown_order' in row:
-                        app.shutdown_order = int(row['shutdown_order'])
-                    if 'dependencies' in row:
-                        dependencies_to_process.append((app, row['dependencies']))
-                    
-                    # Create or update instance
-                    host = row['host'].strip()
-                    port = int(row['port']) if 'port' in row and row['port'] else None
-                    webui_url = row['webui_url'].strip() if 'webui_url' in row else None
-                    
-                    # Determine if host should be treated as database
-                    is_database = any(db_name in host.upper() for db_name in ['DCILDB', 'IL-DB', 'IL-DEV', 'DCILDD'])
-                    
-                    instance = ApplicationInstance.query.filter_by(application=app, host=host).first()
-                    if instance:
-                        instance.port = port
-                        instance.webui_url = webui_url
-                        if is_database:
-                            instance.db_host = host
-                    else:
-                        instance = ApplicationInstance(
-                            application=app,
-                            host=host,
-                            port=port,
-                            webui_url=webui_url,
-                            db_host=host if is_database else None
-                        )
-                        db.session.add(instance)
-                    
-                except Exception as e:
-                    errors.append(f"Error processing row {i}: {str(e)}")
+        if not isinstance(data, dict):
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid data format. Expected JSON object.'
+            }), 400
             
-            # Commit after each chunk
-            try:
-                db.session.commit()
-            except Exception as e:
-                db.session.rollback()
-                errors.append(f"Error committing chunk {i}: {str(e)}")
+        # First create teams
+        for team_data in data.get('teams', []):
+            if not isinstance(team_data, dict) or 'name' not in team_data:
+                continue
+                
+            team = Team.query.filter_by(name=team_data['name']).first()
+            if not team:
+                team = Team(name=team_data['name'])
+                db.session.add(team)
+        db.session.commit()  # Commit teams first
         
+        # Then create applications and instances
+        for app_data in data.get('applications', []):
+            if not isinstance(app_data, dict) or 'name' not in app_data or 'team' not in app_data:
+                continue
+                
+            team = Team.query.filter_by(name=app_data['team']).first()
+            if not team:
+                continue  # Skip if team doesn't exist
+                
+            app = Application.query.filter_by(name=app_data['name'], team_id=team.id).first()
+            if not app:
+                app = Application(
+                    name=app_data['name'],
+                    team_id=team.id,
+                    shutdown_order=app_data.get('shutdown_order')
+                )
+                db.session.add(app)
+                
+            # Create or update instances
+            for instance_data in app_data.get('instances', []):
+                if not isinstance(instance_data, dict) or 'host' not in instance_data:
+                    continue
+                    
+                instance = ApplicationInstance.query.filter_by(
+                    application_id=app.id,
+                    host=instance_data['host']
+                ).first()
+                
+                if not instance:
+                    instance = ApplicationInstance(
+                        application_id=app.id,
+                        host=instance_data['host'],
+                        port=instance_data.get('port'),
+                        webui_url=instance_data.get('webui_url'),
+                        db_host=instance_data.get('db_host'),
+                        status='unknown'
+                    )
+                    db.session.add(instance)
+                else:
+                    instance.port = instance_data.get('port', instance.port)
+                    instance.webui_url = instance_data.get('webui_url', instance.webui_url)
+                    instance.db_host = instance_data.get('db_host', instance.db_host)
+        
+        db.session.commit()
+        return jsonify({'status': 'success', 'message': 'Data imported successfully'})
+        
+    except json.JSONDecodeError as e:
         return jsonify({
-            'status': 'success',
-            'imported': imported,
-            'updated': updated,
-            'skipped': skipped,
-            'errors': errors
-        })
-        
+            'status': 'error',
+            'message': f'Invalid JSON format: {str(e)}'
+        }), 400
     except Exception as e:
         db.session.rollback()
         return jsonify({
             'status': 'error',
-            'message': str(e)
+            'message': f'Import failed: {str(e)}'
         }), 500
 
 @main.route('/check_all_status')

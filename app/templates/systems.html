@@ -104,7 +104,121 @@
 {% include 'import_modal.html' %}
 
 <script>
+let checkingStatus = false;
+
+function importData() {
+    const fileInput = document.getElementById('importFile');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        alert('Please select a file to import');
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = JSON.parse(e.target.result);
+            
+            fetch('/import_data', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert('Import successful');
+                    location.reload();
+                } else {
+                    alert('Import failed: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('An unexpected error occurred: ' + error);
+            });
+        } catch (e) {
+            alert('Invalid JSON file: ' + e.message);
+        }
+    };
+    
+    reader.readAsText(file);
+}
+
+function checkAllStatus() {
+    if (checkingStatus) return;
+    
+    checkingStatus = true;
+    const button = document.querySelector('button[onclick="checkAllStatus()"]');
+    button.disabled = true;
+    button.textContent = 'Checking Status...';
+    
+    fetch('/check_all_status')
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // Poll for updates every 5 seconds for up to 30 seconds
+                let attempts = 0;
+                const maxAttempts = 6;
+                
+                const pollStatus = () => {
+                    if (attempts >= maxAttempts) {
+                        checkingStatus = false;
+                        button.disabled = false;
+                        button.textContent = 'Check All Status';
+                        location.reload();
+                        return;
+                    }
+                    
+                    fetch('/systems')
+                        .then(response => response.text())
+                        .then(html => {
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(html, 'text/html');
+                            const newTable = doc.querySelector('table');
+                            const currentTable = document.querySelector('table');
+                            if (currentTable && newTable) {
+                                currentTable.innerHTML = newTable.innerHTML;
+                            }
+                            attempts++;
+                            setTimeout(pollStatus, 5000);
+                        })
+                        .catch(() => {
+                            attempts = maxAttempts;
+                            pollStatus();
+                        });
+                };
+                
+                setTimeout(pollStatus, 5000);
+            } else {
+                alert('Status check failed: ' + data.message);
+                checkingStatus = false;
+                button.disabled = false;
+                button.textContent = 'Check All Status';
+            }
+        })
+        .catch(error => {
+            alert('An unexpected error occurred: ' + error);
+            checkingStatus = false;
+            button.disabled = false;
+            button.textContent = 'Check All Status';
+        });
+}
+
+// Prevent double-clicking on buttons
 document.addEventListener('DOMContentLoaded', function() {
+    const buttons = document.querySelectorAll('button');
+    buttons.forEach(button => {
+        button.addEventListener('click', function(e) {
+            if (this.disabled) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        });
+    });
+    
     // Initialize tooltips
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
@@ -170,43 +284,6 @@ function updateStatusBadge(statusBadge, status, details = []) {
         statusBadge.setAttribute('title', details.join('\n'));
         new bootstrap.Tooltip(statusBadge);
     }
-}
-
-function checkAllStatus(showLoading = true) {
-    if (showLoading) {
-        // Show loading state for all badges
-        const statusBadges = document.querySelectorAll('.badge');
-        statusBadges.forEach(badge => {
-            badge.className = 'badge bg-warning';
-            badge.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Checking...';
-        });
-    }
-
-    fetch('/check_all_status')
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'error') {
-                console.error('Error:', data.message);
-                return;
-            }
-            
-            data.results.forEach(app => {
-                app.instances.forEach(instance => {
-                    const row = document.querySelector(`[data-instance-id="${instance.id}"]`);
-                    if (!row) return;
-                    
-                    const statusBadge = row.querySelector('.badge');
-                    updateStatusBadge(statusBadge, instance.status, instance.details || []);
-                });
-            });
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            const statusBadges = document.querySelectorAll('.badge');
-            statusBadges.forEach(badge => {
-                updateStatusBadge(badge, 'error', ['Failed to check status']);
-            });
-        });
 }
 
 function checkInstanceStatus(instanceId) {
