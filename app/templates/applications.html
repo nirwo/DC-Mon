@@ -52,7 +52,6 @@
                             <th>Name</th>
                             <th>Team</th>
                             <th>Status</th>
-                            <th>Instances</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -63,7 +62,7 @@
                             <td><input type="checkbox" name="selected_apps" value="{{ app.id }}"></td>
                             <td>
                                 <div class="d-flex align-items-center">
-                                    <button class="btn btn-sm btn-link me-2 toggle-instances" onclick="toggleInstances(this, {{ app.id }})">
+                                    <button class="btn btn-sm btn-link me-2 toggle-instances" onclick="toggleInstances(this, {{ app.id }})" aria-expanded="false">
                                         <i class="bi bi-chevron-right"></i>
                                     </button>
                                     {{ app.name }}
@@ -71,84 +70,58 @@
                             </td>
                             <td>{{ app.team.name }}</td>
                             <td>
-                                <span class="badge bg-{{ app.state == 'up' and 'success' or app.state == 'down' and 'danger' or 'warning' }}">
-                                    {{ app.state }}
-                                </span>
-                            </td>
-                            <td>
-                                <small class="text-muted">{{ app.instances|length }} instance(s)</small>
+                                <div class="d-flex align-items-center">
+                                    <span class="badge bg-secondary me-2">Checking...</span>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="checkStatus({{ app.id }})">
+                                        <i class="bi bi-arrow-clockwise"></i>
+                                    </button>
+                                </div>
                             </td>
                             <td>
                                 <div class="btn-group">
-                                    <button class="btn btn-sm btn-outline-info" onclick="checkStatus({{ app.id }})">
-                                        <i class="bi bi-arrow-clockwise"></i>
-                                    </button>
                                     <button class="btn btn-sm btn-outline-primary" onclick="editApplication({{ app.id }})">
                                         <i class="bi bi-pencil"></i>
                                     </button>
-                                    <button class="btn btn-sm btn-outline-danger" onclick="confirmShutdown({{ app.id }})">
-                                        <i class="bi bi-power"></i>
-                                    </button>
                                     <button class="btn btn-sm btn-outline-success" onclick="markCompleted({{ app.id }})">
-                                        <i class="bi bi-check-circle"></i>
+                                        <i class="bi bi-check-lg"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteApplication({{ app.id }})">
+                                        <i class="bi bi-trash"></i>
                                     </button>
                                 </div>
                             </td>
                         </tr>
+                        {% if app.instances %}
                         {% for instance in app.instances %}
-                        <tr class="instance-row" data-parent-id="{{ app.id }}">
-                            <td colspan="6" class="p-0">
-                                <div class="instances-container bg-light p-3">
-                                    <div class="table-responsive">
-                                        <table class="table table-sm mb-0">
-                                            <thead>
-                                                <tr>
-                                                    <th>Host</th>
-                                                    <th>Port</th>
-                                                    <th>Status</th>
-                                                    <th>Last Checked</th>
-                                                    <th>Actions</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <tr data-instance-id="{{ instance.id }}">
-                                                    <td>{{ instance.host }}</td>
-                                                    <td>{{ instance.port }}</td>
-                                                    <td>
-                                                        <span class="badge bg-{{ instance.status == 'running' and 'success' or instance.status == 'stopped' and 'danger' or 'secondary' }}">
-                                                            {{ instance.status|title }}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <small class="text-muted">
-                                                            {% if instance.last_checked %}
-                                                                {{ instance.last_checked.strftime('%Y-%m-%d %H:%M:%S') }}
-                                                            {% else %}
-                                                                Never
-                                                            {% endif %}
-                                                        </small>
-                                                    </td>
-                                                    <td>
-                                                        <div class="btn-group">
-                                                            <button class="btn btn-sm btn-outline-info" onclick="checkInstanceStatus({{ instance.id }})">
-                                                                <i class="bi bi-arrow-clockwise"></i>
-                                                            </button>
-                                                            <button class="btn btn-sm btn-outline-danger" onclick="confirmInstanceShutdown({{ instance.id }})">
-                                                                <i class="bi bi-power"></i>
-                                                            </button>
-                                                            <button class="btn btn-sm btn-link text-muted" onclick="updateInstanceUrl({{ instance.id }})">
-                                                                <i class="bi bi-pencil-square"></i>
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
+                        <tr class="instance-row" data-parent-id="{{ app.id }}" style="display: none;">
+                            <td colspan="5">
+                                <div class="ms-4">
+                                    <div class="row g-3 align-items-center">
+                                        <div class="col-md-3">
+                                            <strong>Host:</strong> {{ instance.host }}
+                                        </div>
+                                        <div class="col-md-2">
+                                            <strong>Port:</strong> {{ instance.port }}
+                                        </div>
+                                        <div class="col-md-3">
+                                            <strong>WebUI:</strong>
+                                            <input type="url" class="form-control form-control-sm webui-url" value="{{ instance.webui_url }}" onchange="updateInstanceUrl('{{ instance.id }}')">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <strong>Status:</strong>
+                                            <span class="badge bg-secondary" data-instance-id="{{ instance.id }}">Checking...</span>
+                                        </div>
+                                        <div class="col-md-2 text-end">
+                                            <button class="btn btn-sm btn-outline-danger" onclick="deleteInstance('{{ instance.id }}')">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </td>
                         </tr>
                         {% endfor %}
+                        {% endif %}
                         {% endif %}
                         {% endfor %}
                     </tbody>
@@ -217,7 +190,10 @@ function filterApplications(searchInput, tableId) {
         // Handle associated instance rows
         let next = row.nextElementSibling;
         while (next && next.classList.contains('instance-row')) {
-            next.style.display = shouldShow && next.classList.contains('show') ? '' : 'none';
+            // Keep instance rows hidden unless parent is expanded
+            const button = row.querySelector('.toggle-instances');
+            const isExpanded = button && button.getAttribute('aria-expanded') === 'true';
+            next.style.display = shouldShow && isExpanded ? '' : 'none';
             next = next.nextElementSibling;
         }
     }
@@ -237,6 +213,14 @@ function toggleInstances(button, appId) {
     instanceRows.forEach(instanceRow => {
         instanceRow.style.display = isExpanding ? '' : 'none';
         instanceRow.classList.toggle('show', isExpanding);
+        
+        // Check status when expanding
+        if (isExpanding) {
+            const instanceId = instanceRow.querySelector('[data-instance-id]')?.dataset.instanceId;
+            if (instanceId) {
+                checkInstanceStatus(instanceId);
+            }
+        }
     });
 }
 
@@ -355,21 +339,19 @@ function deleteApplication(id) {
         return;
     }
     
-    fetch(`/delete_application/${id}`, {
-        method: 'DELETE'
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            location.reload();
-        } else {
-            showAlert('danger', 'Error: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showAlert('danger', 'Error deleting application');
-    });
+    fetch(`/delete_application/${id}`, { method: 'DELETE' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+            } else {
+                window.location.reload();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Failed to delete application');
+        });
 }
 
 function deleteSelectedApplications() {
@@ -439,7 +421,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Start periodic status checks for visible instances
     let statusCheckInterval = setInterval(() => {
-        const visibleInstances = document.querySelectorAll('.instance-row:not([style*="display: none"]) [data-instance-id]');
+        const visibleInstances = document.querySelectorAll('.instance-row[style*="display: table-row"] [data-instance-id]');
         visibleInstances.forEach(instance => {
             checkInstanceStatus(instance.dataset.instanceId);
         });
