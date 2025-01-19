@@ -621,11 +621,11 @@ function checkStatus(appId) {
     const checkButton = row.querySelector('button[onclick*="checkStatus"]');
     
     // Disable button and show loading
-    checkButton.disabled = true;
+    if (checkButton) checkButton.disabled = true;
     statusBadge.className = 'badge bg-warning me-2';
     statusBadge.textContent = 'Checking...';
     
-    fetch(`/check_status/${appId}`)
+    return fetch(`/check_status/${appId}`)
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
@@ -634,14 +634,17 @@ function checkStatus(appId) {
                 
                 // Also update instance statuses if they are visible
                 const instanceRows = document.querySelectorAll(`.instance-row[data-parent-id="${appId}"]`);
-                instanceRows.forEach(instanceRow => {
-                    if (instanceRow.style.display !== 'none') {
-                        const instanceId = instanceRow.querySelector('[data-instance-id]')?.dataset.instanceId;
-                        if (instanceId) {
-                            checkInstanceStatus(instanceId);
-                        }
+                if (instanceRows.length > 0) {
+                    const visibleInstances = Array.from(instanceRows)
+                        .filter(row => row.style.display !== 'none')
+                        .map(row => row.querySelector('[data-instance-id]')?.dataset.instanceId)
+                        .filter(id => id);
+                        
+                    if (visibleInstances.length > 0) {
+                        const chunks = chunkArray(visibleInstances, 5);
+                        processChunksWithDelay(chunks, checkInstanceStatus);
                     }
-                });
+                }
             } else {
                 statusBadge.textContent = 'Error';
                 statusBadge.className = 'badge bg-danger me-2';
@@ -655,18 +658,21 @@ function checkStatus(appId) {
             showAlert('danger', 'Error checking status');
         })
         .finally(() => {
-            checkButton.disabled = false;
+            if (checkButton) checkButton.disabled = false;
         });
 }
 
 function checkInstanceStatus(instanceId) {
-    const row = document.querySelector(`[data-instance-id="${instanceId}"]`).closest('tr');
+    const row = document.querySelector(`[data-instance-id="${instanceId}"]`)?.closest('tr');
+    if (!row) return Promise.resolve();
+    
     const statusBadge = row.querySelector('.badge');
+    if (!statusBadge) return Promise.resolve();
     
     statusBadge.className = 'badge bg-warning';
     statusBadge.textContent = 'Checking...';
     
-    fetch(`/check_instance_status/${instanceId}`)
+    return fetch(`/check_instance_status/${instanceId}`)
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
@@ -686,21 +692,45 @@ function checkInstanceStatus(instanceId) {
         });
 }
 
+// Utility function to split array into chunks
+function chunkArray(array, chunkSize) {
+    const chunks = [];
+    for (let i = 0; i < array.length; i += chunkSize) {
+        chunks.push(array.slice(i, i + chunkSize));
+    }
+    return chunks;
+}
+
+// Process chunks with delay
+async function processChunksWithDelay(chunks, processFn, delayMs = 1000) {
+    for (const chunk of chunks) {
+        await Promise.all(chunk.map(processFn));
+        if (delayMs > 0 && chunks.indexOf(chunk) < chunks.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+    }
+}
+
 // Start periodic status checks for visible instances
 document.addEventListener('DOMContentLoaded', function() {
-    let statusCheckInterval = setInterval(() => {
-        // Check visible applications
-        const visibleApps = document.querySelectorAll('tr[data-app-id]:not([style*="display: none"])');
-        visibleApps.forEach(row => {
-            const appId = row.dataset.appId;
-            checkStatus(appId);
-        });
+    let statusCheckInterval = setInterval(async () => {
+        // Check visible applications in chunks
+        const visibleApps = Array.from(document.querySelectorAll('tr[data-app-id]:not([style*="display: none"])'))
+            .map(row => row.dataset.appId);
+            
+        if (visibleApps.length > 0) {
+            const appChunks = chunkArray(visibleApps, 5);
+            await processChunksWithDelay(appChunks, checkStatus);
+        }
         
-        // Check visible instances
-        const visibleInstances = document.querySelectorAll('.instance-row[style*="display: table-row"] [data-instance-id]');
-        visibleInstances.forEach(instance => {
-            checkInstanceStatus(instance.dataset.instanceId);
-        });
+        // Check visible instances in chunks
+        const visibleInstances = Array.from(document.querySelectorAll('.instance-row[style*="display: table-row"] [data-instance-id]'))
+            .map(instance => instance.dataset.instanceId);
+            
+        if (visibleInstances.length > 0) {
+            const instanceChunks = chunkArray(visibleInstances, 5);
+            await processChunksWithDelay(instanceChunks, checkInstanceStatus);
+        }
     }, 30000);
     
     // Clean up interval on page unload
