@@ -4,7 +4,6 @@ from datetime import datetime
 from threading import Thread
 from flask import current_app
 from app.database import get_db
-from app import create_app
 from app.models import Application, ApplicationInstance
 
 def check_status(host, port):
@@ -74,18 +73,18 @@ def background_status_check(app):
             # Sleep before next round
             time.sleep(60)
 
-def start_background_checker():
-    """Start the background status checker thread"""
-    app = create_app()
-    
-    def run_checker():
-        while True:
+def run_checker():
+    while True:
+        with current_app.app_context():
             try:
-                background_status_check(app)
+                background_status_check(current_app._get_current_object())
             except Exception as e:
                 current_app.logger.error(f"Background checker error: {str(e)}")
                 time.sleep(60)  # Sleep on error before retrying
-    
-    thread = Thread(target=run_checker, daemon=True)
-    thread.start()
-    return thread
+
+def start_background_checker():
+    """Start the background checker thread."""
+    checker_thread = Thread(target=run_checker)
+    checker_thread.daemon = True
+    checker_thread.start()
+    return checker_thread
