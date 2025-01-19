@@ -39,7 +39,14 @@
                         {% for app in applications %}
                         {% if not app.completed %}
                         <tr data-app-id="{{ app.id }}">
-                            <td>{{ app.name }}</td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <button class="btn btn-sm btn-link me-2 toggle-instances" onclick="toggleInstances({{ app.id }})">
+                                        <i class="bi bi-chevron-right"></i>
+                                    </button>
+                                    {{ app.name }}
+                                </div>
+                            </td>
                             <td>{{ app.team.name }}</td>
                             <td>
                                 <span class="badge bg-{{ app.state == 'up' and 'success' or app.state == 'down' and 'danger' or 'warning' }}">
@@ -51,6 +58,9 @@
                             </td>
                             <td>
                                 <div class="btn-group">
+                                    <button class="btn btn-sm btn-outline-info" onclick="checkStatus({{ app.id }})">
+                                        <i class="bi bi-arrow-clockwise"></i>
+                                    </button>
                                     <button class="btn btn-sm btn-outline-primary" onclick="editApplication({{ app.id }})">
                                         <i class="bi bi-pencil"></i>
                                     </button>
@@ -60,6 +70,57 @@
                                     <button class="btn btn-sm btn-outline-success" onclick="markCompleted({{ app.id }})">
                                         <i class="bi bi-check-circle"></i>
                                     </button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr class="instances-row d-none" data-parent-id="{{ app.id }}">
+                            <td colspan="5" class="p-0">
+                                <div class="instances-container bg-light p-3">
+                                    <div class="table-responsive">
+                                        <table class="table table-sm mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Host</th>
+                                                    <th>Port</th>
+                                                    <th>Status</th>
+                                                    <th>Last Checked</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for instance in app.instances %}
+                                                <tr data-instance-id="{{ instance.id }}">
+                                                    <td>{{ instance.host }}</td>
+                                                    <td>{{ instance.port }}</td>
+                                                    <td>
+                                                        <span class="badge bg-{{ instance.status == 'running' and 'success' or instance.status == 'stopped' and 'danger' or 'secondary' }}">
+                                                            {{ instance.status|title }}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <small class="text-muted">
+                                                            {% if instance.last_checked %}
+                                                                {{ instance.last_checked.strftime('%Y-%m-%d %H:%M:%S') }}
+                                                            {% else %}
+                                                                Never
+                                                            {% endif %}
+                                                        </small>
+                                                    </td>
+                                                    <td>
+                                                        <div class="btn-group">
+                                                            <button class="btn btn-sm btn-outline-info" onclick="checkInstanceStatus({{ instance.id }})">
+                                                                <i class="bi bi-arrow-clockwise"></i>
+                                                            </button>
+                                                            <button class="btn btn-sm btn-outline-danger" onclick="confirmInstanceShutdown({{ instance.id }})">
+                                                                <i class="bi bi-power"></i>
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             </td>
                         </tr>
@@ -591,11 +652,83 @@ document.addEventListener('DOMContentLoaded', function() {
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl)
     });
+    
+    // Check status of visible instances every 30 seconds
+    setInterval(() => {
+        const visibleInstances = document.querySelectorAll('.instances-row:not(.d-none) [data-instance-id]');
+        visibleInstances.forEach(instance => {
+            checkInstanceStatus(instance.dataset.instanceId);
+        });
+    }, 30000);
 });
 
 </script>
 
 <style>
+.toggle-instances {
+    padding: 0;
+    color: #6c757d;
+    transition: transform 0.2s ease;
+}
+
+.toggle-instances:hover {
+    color: #0d6efd;
+}
+
+.toggle-instances i {
+    transition: transform 0.2s ease;
+}
+
+.toggle-instances i.bi-chevron-down {
+    transform: rotate(90deg);
+}
+
+.instances-container {
+    border-left: 4px solid #e9ecef;
+}
+
+.instances-row {
+    background-color: #f8f9fa;
+}
+
+.instances-row td {
+    transition: all 0.3s ease;
+}
+
+.instances-row:not(.d-none) td {
+    padding: 1rem !important;
+}
+
+.table.table-sm th {
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+
+/* Smooth transitions for status changes */
+.badge {
+    transition: background-color 0.3s ease;
+}
+
+/* Hover effects for action buttons */
+.btn-group .btn {
+    transition: all 0.2s ease;
+}
+
+.btn-group .btn:hover {
+    transform: translateY(-1px);
+}
+
+/* Status badge animations */
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.badge.bg-warning {
+    animation: pulse 1s infinite;
+}
+
 .instance-row {
     padding: 8px 0;
     border-bottom: 1px solid #f0f0f0;
