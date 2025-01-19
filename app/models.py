@@ -17,7 +17,7 @@ class Team:
 
     def to_dict(self):
         return {
-            '_id': self._id,
+            '_id': str(self._id),
             'name': self.name
         }
 
@@ -49,9 +49,9 @@ class Application:
 
     def to_dict(self):
         return {
-            '_id': self._id,
+            '_id': str(self._id),
             'name': self.name,
-            'team_id': self.team_id,
+            'team_id': str(self.team_id) if self.team_id else None,
             'created_at': self.created_at,
             'updated_at': self.updated_at
         }
@@ -93,8 +93,8 @@ class ApplicationInstance:
 
     def to_dict(self):
         return {
-            '_id': self._id,
-            'application_id': self.application_id,
+            '_id': str(self._id),
+            'application_id': str(self.application_id) if self.application_id else None,
             'host': self.host,
             'port': self.port,
             'webui_url': self.webui_url,
