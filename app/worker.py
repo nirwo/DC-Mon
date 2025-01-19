@@ -8,11 +8,11 @@ from app.models import Application, ApplicationInstance
 
 def check_status(host, port):
     """Check if host:port is accessible"""
+    sock = None
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(2)
         result = sock.connect_ex((host, port or 80))
-        sock.close()
         return True if result == 0 else False, None
     except socket.gaierror:
         return False, "Could not resolve hostname"
@@ -20,6 +20,9 @@ def check_status(host, port):
         return False, "Connection timed out"
     except Exception as e:
         return False, str(e)
+    finally:
+        if sock:
+            sock.close()
 
 def background_status_check(app):
     """Background task to check all application statuses"""
@@ -45,16 +48,21 @@ def background_status_check(app):
     except Exception as e:
         current_app.logger.error(f"Background status check error: {str(e)}")
         db.session.rollback()
+    finally:
+        db.session.remove()
 
 def start_background_checker():
     """Start the background status checker thread"""
     app = create_app()
     
     def run_checker():
-        while True:
-            with app.app_context():
-                background_status_check(app)
-            time.sleep(30)  # Check every 30 seconds
+        with app.app_context():
+            while True:
+                try:
+                    background_status_check(app)
+                except Exception as e:
+                    current_app.logger.error(f"Checker thread error: {str(e)}")
+                time.sleep(3600)  # Check every hour
     
     checker_thread = Thread(target=run_checker, daemon=True)
     checker_thread.start()
