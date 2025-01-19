@@ -371,22 +371,36 @@ def delete_instance(instance_id):
         logger.error(f"Error in delete_instance: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@main.route('/delete_application/<int:app_id>', methods=['POST'])
-def delete_application(app_id):
+@main.route('/api/applications/delete/<app_id>', methods=['DELETE'])
+def delete_application_api(app_id):
+    db = get_db()
     try:
-        db = get_db()
-        app = db.applications.find_one({'_id': ObjectId(app_id)})
-        if not app:
-            return jsonify({'status': 'error', 'message': 'Application not found'}), 404
+        # Delete all systems for this application
+        db.systems.delete_many({'application_id': str(app_id)})
         
-        # Delete all instances first
-        db.application_instances.delete_many({'application_id': app['_id']})
-        # Then delete the application
-        db.applications.delete_one({'_id': app['_id']})
+        # Delete the application
+        result = db.applications.delete_one({'_id': ObjectId(app_id)})
+        
+        if result.deleted_count == 0:
+            return jsonify({'error': 'Application not found'}), 404
+            
         return jsonify({'status': 'success'})
     except Exception as e:
-        logger.error(f"Error in delete_application: {str(e)}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/applications/<app_id>', methods=['DELETE'])
+def delete_application(app_id):
+    db = get_db()
+    try:
+        # Delete all instances
+        db.application_instances.delete_many({'application_id': ObjectId(app_id)})
+        
+        # Delete the application
+        db.applications.delete_one({'_id': ObjectId(app_id)})
+        
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/update_instance_url/<int:instance_id>', methods=['POST'])
 def update_instance_url(instance_id):
@@ -699,108 +713,6 @@ def delete_team(team_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@main.route('/api/applications/delete/<app_id>', methods=['DELETE'])
-def delete_application(app_id):
-    db = get_db()
-    try:
-        # Delete all systems for this application
-        db.systems.delete_many({'application_id': str(app_id)})
-        
-        # Delete the application
-        result = db.applications.delete_one({'_id': ObjectId(app_id)})
-        
-        if result.deleted_count == 0:
-            return jsonify({'error': 'Application not found'}), 404
-            
-        return jsonify({'status': 'success'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/api/systems/<system_id>', methods=['DELETE'])
-def delete_system(system_id):
-    db = get_db()
-    try:
-        # Get system to find its application
-        system = db.systems.find_one({'_id': ObjectId(system_id)})
-        if not system:
-            return jsonify({'error': 'System not found'}), 404
-            
-        # Remove system from application's systems list
-        if system.get('application_id'):
-            db.applications.update_one(
-                {'_id': ObjectId(system['application_id'])},
-                {'$pull': {'systems': str(system['_id'])}}
-            )
-        
-        # Delete the system
-        result = db.systems.delete_one({'_id': ObjectId(system_id)})
-        
-        if result.deleted_count == 0:
-            return jsonify({'error': 'System not found'}), 404
-            
-        return jsonify({'status': 'success'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/api/applications/<app_id>/state', methods=['POST'])
-def update_application_state(app_id):
-    db = get_db()
-    data = request.get_json()
-    new_state = data.get('state')
-    
-    try:
-        if new_state not in ['notStarted', 'inProgress', 'completed']:
-            return jsonify({'error': 'Invalid state'}), 400
-            
-        # Update application state
-        result = db.applications.update_one(
-            {'_id': ObjectId(app_id)},
-            {'$set': {
-                'state': new_state,
-                'updated_at': datetime.utcnow()
-            }}
-        )
-        
-        if result.modified_count == 0:
-            return jsonify({'error': 'Application not found'}), 404
-            
-        return jsonify({'status': 'success'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/api/applications/<app_id>/toggle', methods=['POST'])
-def toggle_application(app_id):
-    db = get_db()
-    data = request.get_json()
-    enabled = data.get('enabled', False)
-    
-    try:
-        # Update application
-        result = db.applications.update_one(
-            {'_id': ObjectId(app_id)},
-            {'$set': {
-                'enabled': enabled,
-                'updated_at': datetime.utcnow()
-            }}
-        )
-        
-        if result.modified_count == 0:
-            return jsonify({'error': 'Application not found'}), 404
-        
-        # Update all associated systems
-        status = 'running' if enabled else 'stopped'
-        db.systems.update_many(
-            {'application_id': str(app_id)},
-            {'$set': {
-                'status': status,
-                'last_checked': datetime.utcnow()
-            }}
-        )
-        
-        return jsonify({'status': 'success'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 @main.route('/api/applications/states')
 def get_application_states():
     db = get_db()
@@ -876,6 +788,65 @@ def update_system_status(system_id):
                 'last_checked': datetime.utcnow()
             }}
         )
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/applications/<app_id>/state', methods=['POST'])
+def update_application_state(app_id):
+    db = get_db()
+    data = request.get_json()
+    new_state = data.get('state')
+    
+    try:
+        if new_state not in ['notStarted', 'inProgress', 'completed']:
+            return jsonify({'error': 'Invalid state'}), 400
+            
+        # Update application state
+        result = db.applications.update_one(
+            {'_id': ObjectId(app_id)},
+            {'$set': {
+                'state': new_state,
+                'updated_at': datetime.utcnow()
+            }}
+        )
+        
+        if result.modified_count == 0:
+            return jsonify({'error': 'Application not found'}), 404
+            
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/applications/<app_id>/toggle', methods=['POST'])
+def toggle_application(app_id):
+    db = get_db()
+    data = request.get_json()
+    enabled = data.get('enabled', False)
+    
+    try:
+        # Update application
+        result = db.applications.update_one(
+            {'_id': ObjectId(app_id)},
+            {'$set': {
+                'enabled': enabled,
+                'updated_at': datetime.utcnow()
+            }}
+        )
+        
+        if result.modified_count == 0:
+            return jsonify({'error': 'Application not found'}), 404
+        
+        # Update all associated systems
+        status = 'running' if enabled else 'stopped'
+        db.systems.update_many(
+            {'application_id': str(app_id)},
+            {'$set': {
+                'status': status,
+                'last_checked': datetime.utcnow()
+            }}
+        )
+        
         return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
