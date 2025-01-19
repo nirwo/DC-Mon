@@ -4,7 +4,7 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 
 class Config:
     SECRET_KEY = 'dev'
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'  # Use in-memory database for now
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///app.db'  # Use file-based database
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Basic SQLAlchemy settings

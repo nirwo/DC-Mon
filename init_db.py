@@ -4,6 +4,8 @@ from app.models import Team, Application, ApplicationInstance
 def init_db():
     app = create_app()
     with app.app_context():
+        # Drop all tables first
+        db.drop_all()
         # Drop all tables
         db.drop_all()
         
