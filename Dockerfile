@@ -17,9 +17,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Set environment variables
-ENV FLASK_APP=run.py
+ENV FLASK_APP=/app/run.py
 ENV FLASK_ENV=development
+ENV PYTHONPATH=/app
 
 EXPOSE 5001
 
-CMD ["flask", "run", "--host=0.0.0.0", "--port=5001"]
+# Set the default command
+CMD ["python", "-m", "flask", "run", "--host=0.0.0.0", "--port=5001"]
