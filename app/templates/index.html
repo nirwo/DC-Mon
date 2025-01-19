@@ -55,6 +55,7 @@
                                         <div class="form-check form-switch">
                                             <input class="form-check-input" type="checkbox" id="toggle-{{ app._id }}" {% if app.enabled %}checked{% endif %} onchange="toggleApplication('{{ app._id }}')">
                                         </div>
+                                        <button class="btn btn-danger btn-sm" onclick="deleteApplication('{{ app._id }}')">Delete</button>
                                     </div>
                                     {% if app.systems %}
                                     <div class="mt-2">
@@ -65,6 +66,7 @@
                                             <span class="badge bg-{{ 'success' if system.status == 'running' else 'secondary' }}">
                                                 {{ system.status }}
                                             </span>
+                                            <button class="btn btn-danger btn-sm" onclick="deleteSystem('{{ system.id }}')">Delete</button>
                                         </div>
                                         {% endfor %}
                                     </div>
@@ -94,6 +96,7 @@
                                         <div class="form-check form-switch">
                                             <input class="form-check-input" type="checkbox" id="toggle-{{ app._id }}" {% if app.enabled %}checked{% endif %} onchange="toggleApplication('{{ app._id }}')">
                                         </div>
+                                        <button class="btn btn-danger btn-sm" onclick="deleteApplication('{{ app._id }}')">Delete</button>
                                     </div>
                                     {% if app.systems %}
                                     <div class="mt-2">
@@ -104,6 +107,7 @@
                                             <span class="badge bg-{{ 'success' if system.status == 'running' else 'secondary' }}">
                                                 {{ system.status }}
                                             </span>
+                                            <button class="btn btn-danger btn-sm" onclick="deleteSystem('{{ system.id }}')">Delete</button>
                                         </div>
                                         {% endfor %}
                                     </div>
@@ -133,6 +137,7 @@
                                         <div class="form-check form-switch">
                                             <input class="form-check-input" type="checkbox" id="toggle-{{ app._id }}" {% if app.enabled %}checked{% endif %} onchange="toggleApplication('{{ app._id }}')">
                                         </div>
+                                        <button class="btn btn-danger btn-sm" onclick="deleteApplication('{{ app._id }}')">Delete</button>
                                     </div>
                                     {% if app.systems %}
                                     <div class="mt-2">
@@ -143,6 +148,7 @@
                                             <span class="badge bg-{{ 'success' if system.status == 'running' else 'secondary' }}">
                                                 {{ system.status }}
                                             </span>
+                                            <button class="btn btn-danger btn-sm" onclick="deleteSystem('{{ system.id }}')">Delete</button>
                                         </div>
                                         {% endfor %}
                                     </div>
@@ -167,6 +173,7 @@
                                 <th>Description</th>
                                 <th>Applications</th>
                                 <th>Systems</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -176,6 +183,9 @@
                                 <td>{{ team.description }}</td>
                                 <td>{{ team.applications }}</td>
                                 <td>{{ team.systems }}</td>
+                                <td>
+                                    <button class="btn btn-danger btn-sm" onclick="deleteTeam('{{ team._id }}')">Delete</button>
+                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -193,7 +203,23 @@
                         </div>
                         <div class="card-body" id="runningSystems">
                             <div class="list-group" id="runningSystemsList">
-                                <!-- Systems will be loaded dynamically -->
+                                {% for app in applications %}
+                                    {% for system in app.systems if system.status == 'running' %}
+                                    <div class="list-group-item">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h6 class="mb-1">{{ system.name }}</h6>
+                                                <small class="text-muted">Application: {{ app.name }}</small>
+                                                <small class="text-muted">Team: {{ app.team.name }}</small>
+                                            </div>
+                                            <span class="badge bg-success">
+                                                {{ system.status }}
+                                            </span>
+                                            <button class="btn btn-danger btn-sm" onclick="deleteSystem('{{ system.id }}')">Delete</button>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                {% endfor %}
                             </div>
                         </div>
                     </div>
@@ -205,7 +231,23 @@
                         </div>
                         <div class="card-body" id="stoppedSystems">
                             <div class="list-group" id="stoppedSystemsList">
-                                <!-- Systems will be loaded dynamically -->
+                                {% for app in applications %}
+                                    {% for system in app.systems if system.status != 'running' %}
+                                    <div class="list-group-item">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h6 class="mb-1">{{ system.name }}</h6>
+                                                <small class="text-muted">Application: {{ app.name }}</small>
+                                                <small class="text-muted">Team: {{ app.team.name }}</small>
+                                            </div>
+                                            <span class="badge bg-secondary">
+                                                {{ system.status }}
+                                            </span>
+                                            <button class="btn btn-danger btn-sm" onclick="deleteSystem('{{ system.id }}')">Delete</button>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                {% endfor %}
                             </div>
                         </div>
                     </div>
@@ -271,6 +313,48 @@ function toggleApplication(appId) {
     });
 }
 
+function deleteTeam(teamId) {
+    if (confirm('Are you sure you want to delete this team? This will also delete all associated applications and systems.')) {
+        fetch(`/api/teams/${teamId}`, {
+            method: 'DELETE'
+        }).then(response => {
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Failed to delete team');
+            }
+        });
+    }
+}
+
+function deleteApplication(appId) {
+    if (confirm('Are you sure you want to delete this application? This will also delete all associated systems.')) {
+        fetch(`/api/applications/${appId}`, {
+            method: 'DELETE'
+        }).then(response => {
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Failed to delete application');
+            }
+        });
+    }
+}
+
+function deleteSystem(systemId) {
+    if (confirm('Are you sure you want to delete this system?')) {
+        fetch(`/api/systems/${systemId}`, {
+            method: 'DELETE'
+        }).then(response => {
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Failed to delete system');
+            }
+        });
+    }
+}
+
 function importCSV() {
     const fileInput = document.getElementById('csvFile');
     const formData = new FormData();
@@ -317,6 +401,7 @@ function updateSystemsDisplay() {
                                 <span class="badge bg-${system.status === 'running' ? 'success' : 'secondary'}">
                                     ${system.status}
                                 </span>
+                                <button class="btn btn-danger btn-sm" onclick="deleteSystem('${system.id}')">Delete</button>
                             </div>
                         </div>
                     `;

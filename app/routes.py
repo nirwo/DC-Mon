@@ -634,22 +634,70 @@ def create_team():
 
 @main.route('/api/teams/<team_id>', methods=['DELETE'])
 def delete_team(team_id):
+    db = get_db()
     try:
-        db = get_db()
+        # Get all applications for this team
+        apps = list(db.applications.find({'team_id': ObjectId(team_id)}))
         
-        # Check if team exists
-        team = db.teams.find_one({'_id': ObjectId(team_id)})
-        if not team:
-            return jsonify({"error": "Team not found"}), 404
+        # Delete all systems associated with these applications
+        for app in apps:
+            db.systems.delete_many({'application_id': str(app['_id'])})
+        
+        # Delete all applications
+        db.applications.delete_many({'team_id': ObjectId(team_id)})
+        
+        # Delete the team
+        result = db.teams.delete_one({'_id': ObjectId(team_id)})
+        
+        if result.deleted_count == 0:
+            return jsonify({'error': 'Team not found'}), 404
             
-        # Check if team has applications
-        if db.applications.find_one({'team_id': ObjectId(team_id)}):
-            return jsonify({"error": "Cannot delete team with existing applications"}), 400
-            
-        db.teams.delete_one({'_id': ObjectId(team_id)})
-        return jsonify({"message": "Team deleted successfully"}), 200
+        return jsonify({'status': 'success'})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/applications/<app_id>', methods=['DELETE'])
+def delete_application(app_id):
+    db = get_db()
+    try:
+        # Delete all systems for this application
+        db.systems.delete_many({'application_id': str(app_id)})
+        
+        # Delete the application
+        result = db.applications.delete_one({'_id': ObjectId(app_id)})
+        
+        if result.deleted_count == 0:
+            return jsonify({'error': 'Application not found'}), 404
+            
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/systems/<system_id>', methods=['DELETE'])
+def delete_system(system_id):
+    db = get_db()
+    try:
+        # Get system to find its application
+        system = db.systems.find_one({'_id': ObjectId(system_id)})
+        if not system:
+            return jsonify({'error': 'System not found'}), 404
+            
+        # Remove system from application's systems list
+        if system.get('application_id'):
+            db.applications.update_one(
+                {'_id': ObjectId(system['application_id'])},
+                {'$pull': {'systems': str(system['_id'])}}
+            )
+        
+        # Delete the system
+        result = db.systems.delete_one({'_id': ObjectId(system_id)})
+        
+        if result.deleted_count == 0:
+            return jsonify({'error': 'System not found'}), 404
+            
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/api/applications/<app_id>/state', methods=['POST'])
 def update_application_state(app_id):
