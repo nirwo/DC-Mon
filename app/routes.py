@@ -836,6 +836,7 @@ def update_application():
         new_name = data.get('name')
         new_team = data.get('team')
         new_dependencies = data.get('dependencies', [])
+        instances = data.get('instances', [])
         
         # Get application
         application = Application.query.get_or_404(app_id)
@@ -850,9 +851,36 @@ def update_application():
         # Update application
         application.name = new_name
         application.team_id = team.id
-        
-        # Update dependencies
         application.dependencies = new_dependencies
+        
+        # Update instances if provided
+        if instances:
+            # Delete removed instances
+            current_instance_ids = [i.get('id') for i in instances if i.get('id')]
+            ApplicationInstance.query.filter(
+                ApplicationInstance.application_id == app_id,
+                ~ApplicationInstance.id.in_(current_instance_ids) if current_instance_ids else True
+            ).delete(synchronize_session=False)
+            
+            # Update/create instances
+            for instance_data in instances:
+                instance_id = instance_data.get('id')
+                if instance_id:
+                    instance = ApplicationInstance.query.get(instance_id)
+                    if instance:
+                        instance.host = instance_data.get('host')
+                        instance.port = instance_data.get('port')
+                        instance.webui_url = instance_data.get('webui_url')
+                        instance.db_host = instance_data.get('db_host')
+                else:
+                    instance = ApplicationInstance(
+                        application_id=app_id,
+                        host=instance_data.get('host'),
+                        port=instance_data.get('port'),
+                        webui_url=instance_data.get('webui_url'),
+                        db_host=instance_data.get('db_host')
+                    )
+                    db.session.add(instance)
         
         db.session.commit()
         return jsonify({'status': 'success'})
