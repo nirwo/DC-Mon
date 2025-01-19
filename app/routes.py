@@ -180,83 +180,137 @@ def check_status(instance_id):
 @main.route('/import', methods=['POST'])
 def import_data():
     try:
+        logger.info("Starting import process")
         if 'file' not in request.files:
+            logger.error("No file in request.files")
             return jsonify({'success': False, 'error': 'No file provided'})
             
         file = request.files['file']
+        if not file or not file.filename:
+            logger.error("Empty file or no filename")
+            return jsonify({'success': False, 'error': 'No file selected'})
+            
+        logger.info(f"Received file: {file.filename}")
+        
         if not file.filename.endswith('.csv'):
+            logger.error("File is not a CSV")
             return jsonify({'success': False, 'error': 'Only CSV files are supported'})
             
         content = file.read().decode('utf-8')
+        logger.info(f"File content length: {len(content)}")
+        
+        # Check if file is empty
+        if len(content.strip()) == 0:
+            logger.error("CSV file is empty")
+            return jsonify({'success': False, 'error': 'CSV file is empty'})
+            
         csv_reader = csv.DictReader(StringIO(content))
+        field_names = csv_reader.fieldnames
+        logger.info(f"CSV fields: {field_names}")
+        
+        # Validate required fields
+        required_fields = ['team_name', 'application_name', 'host']
+        missing_fields = [field for field in required_fields if field not in field_names]
+        if missing_fields:
+            error_msg = f"CSV is missing required columns: {', '.join(missing_fields)}"
+            logger.error(error_msg)
+            return jsonify({'success': False, 'error': error_msg})
         
         db = get_db()
         errors = []
         success_count = 0
         
-        for row in csv_reader:
+        for row_num, row in enumerate(csv_reader, 1):
             try:
-                # Check for required fields
-                required_fields = ['team_name', 'application_name', 'host']
-                if not all(field in row for field in required_fields):
-                    errors.append(f"Missing required fields in row: {row}")
+                logger.info(f"Processing row {row_num}: {row}")
+                
+                # Check for empty required fields
+                empty_fields = [field for field in required_fields if not row.get(field, '').strip()]
+                if empty_fields:
+                    error_msg = f"Row {row_num}: Missing values for required fields: {', '.join(empty_fields)}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
                     continue
-                    
+                
                 # Create or get team
-                team = db.teams.find_one_and_update(
-                    {'name': row['team_name']},
-                    {'$setOnInsert': {'name': row['team_name']}},
+                team_result = db.teams.find_one_and_update(
+                    {'name': row['team_name'].strip()},
+                    {'$setOnInsert': {
+                        'name': row['team_name'].strip(),
+                        'description': row.get('team_description', '').strip()
+                    }},
                     upsert=True,
                     return_document=True
                 )
+                logger.info(f"Team created/updated: {team_result}")
                 
                 # Create or get application
-                app = db.applications.find_one_and_update(
+                app_result = db.applications.find_one_and_update(
                     {
-                        'name': row['application_name'],
-                        'team_id': str(team['_id'])
+                        'name': row['application_name'].strip(),
+                        'team_id': str(team_result['_id'])
                     },
                     {
-                        '$setOnInsert': {
-                            'name': row['application_name'],
-                            'team_id': str(team['_id']),
-                            'shutdown_order': int(row.get('shutdown_order', 0))
+                        '$set': {
+                            'name': row['application_name'].strip(),
+                            'team_id': str(team_result['_id']),
+                            'shutdown_order': int(row.get('shutdown_order', 0)),
+                            'description': row.get('application_description', '').strip()
                         }
                     },
                     upsert=True,
                     return_document=True
                 )
+                logger.info(f"Application created/updated: {app_result}")
                 
                 # Create or update system
                 system_data = {
-                    'host': row['host'],
-                    'application_id': str(app['_id']),
-                    'port': row.get('port'),
-                    'webui_url': row.get('webui_url'),
-                    'status': 'unknown'
+                    'name': row['host'].strip(),
+                    'host': row['host'].strip(),
+                    'application_id': str(app_result['_id']),
+                    'port': int(row['port']) if row.get('port', '').strip().isdigit() else None,
+                    'webui_url': row.get('webui_url', '').strip() or None,
+                    'status': 'unknown',
+                    'last_checked': datetime.utcnow()
                 }
                 
-                db.systems.find_one_and_update(
-                    {'host': row['host'], 'application_id': str(app['_id'])},
+                system_result = db.systems.find_one_and_update(
+                    {'host': row['host'].strip(), 'application_id': str(app_result['_id'])},
                     {'$set': system_data},
-                    upsert=True
+                    upsert=True,
+                    return_document=True
                 )
+                logger.info(f"System created/updated: {system_result}")
                 
                 success_count += 1
+                logger.info(f"Successfully processed row {row_num}")
                 
             except Exception as e:
-                errors.append(f"Error processing row {row}: {str(e)}")
+                error_msg = f"Row {row_num}: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
                 continue
         
-        return jsonify({
+        if success_count == 0:
+            logger.error("No rows were successfully imported")
+            return jsonify({
+                'success': False,
+                'error': 'No rows were successfully imported',
+                'errors': errors
+            })
+        
+        response = {
             'success': True,
-            'message': f"Successfully imported {success_count} items",
+            'message': f"{success_count} items successfully imported",
             'errors': errors if errors else None
-        })
+        }
+        logger.info(f"Import completed. Response: {response}")
+        return jsonify(response)
         
     except Exception as e:
-        logger.error(f"Import error: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)})
+        error_msg = f"Import error: {str(e)}"
+        logger.error(error_msg)
+        return jsonify({'success': False, 'error': error_msg})
 
 @main.route('/api/systems/<system_id>/status', methods=['GET'])
 def get_system_status(system_id):
@@ -272,7 +326,10 @@ def get_system_status(system_id):
         # Update system status in database
         db.systems.update_one(
             {'_id': ObjectId(system_id)},
-            {'$set': {'status': status}}
+            {'$set': {
+                'status': status,
+                'last_checked': datetime.utcnow()
+            }}
         )
         
         return jsonify({
@@ -626,39 +683,59 @@ def get_test_results(app_id):
 
 @main.route('/api/systems')
 def get_systems():
-    db = get_db()
-    systems = []
     try:
+        db = get_db()
+        systems = []
         for system in db.systems.find():
             app = db.applications.find_one({'_id': ObjectId(system['application_id'])})
-            systems.append({
-                'id': str(system['_id']),
-                'name': system['name'],
-                'status': 'running' if app and app.get('enabled', False) else 'stopped',
-                'last_checked': system.get('last_checked', datetime.utcnow()),
-                'application_id': str(system['application_id'])
-            })
+            if app:
+                team = db.teams.find_one({'_id': ObjectId(app['team_id'])})
+                systems.append({
+                    'id': str(system['_id']),
+                    'name': system.get('name', system['host']),
+                    'host': system['host'],
+                    'status': system.get('status', 'unknown'),
+                    'last_checked': system.get('last_checked', datetime.utcnow()),
+                    'port': system.get('port'),
+                    'webui_url': system.get('webui_url'),
+                    'application': {
+                        'id': str(app['_id']),
+                        'name': app['name']
+                    },
+                    'team': {
+                        'id': str(team['_id']) if team else None,
+                        'name': team['name'] if team else 'Unknown'
+                    } if team else None
+                })
         return jsonify(systems)
     except Exception as e:
+        logger.error(f"Error getting systems: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @main.route('/api/systems/<system_id>/status', methods=['POST'])
 def update_system_status(system_id):
-    db = get_db()
-    data = request.get_json()
-    status = data.get('status')
-    
     try:
-        db.systems.update_one(
+        data = request.get_json()
+        status = data.get('status')
+        if status not in ['running', 'stopped']:
+            return jsonify({'status': 'error', 'message': 'Invalid status'}), 400
+            
+        db = get_db()
+        result = db.systems.update_one(
             {'_id': ObjectId(system_id)},
             {'$set': {
                 'status': status,
                 'last_checked': datetime.utcnow()
             }}
         )
+        
+        if result.modified_count == 0:
+            return jsonify({'status': 'error', 'message': 'System not found'}), 404
+            
         return jsonify({'status': 'success'})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Update system status error: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @main.route('/api/applications/<app_id>/state', methods=['POST'])
 def update_application_state(app_id):
@@ -684,6 +761,7 @@ def update_application_state(app_id):
             
         return jsonify({'status': 'success'})
     except Exception as e:
+        logger.error(f"Error in update_application_state: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @main.route('/api/applications/<app_id>/toggle', methods=['POST'])
@@ -717,6 +795,7 @@ def toggle_application(app_id):
         
         return jsonify({'status': 'success'})
     except Exception as e:
+        logger.error(f"Error in toggle_application: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @main.route('/api/applications/states')
