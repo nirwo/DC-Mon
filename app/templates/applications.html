@@ -271,7 +271,7 @@ function checkInstanceStatus(instanceId) {
     if (!statusBadge) return Promise.resolve();
     
     statusBadge.className = 'badge bg-warning';
-    statusBadge.textContent = 'Checking...';
+    statusBadge.textContent = 'Loading...';
     
     return fetch(`/check_instance_status/${instanceId}`)
         .then(response => response.json())
@@ -279,6 +279,13 @@ function checkInstanceStatus(instanceId) {
             if (data.status === 'success') {
                 statusBadge.textContent = data.instance_status;
                 statusBadge.className = `badge ${data.instance_status === 'UP' ? 'bg-success' : 'bg-danger'}`;
+                
+                // Add last checked time if available
+                if (data.last_checked) {
+                    const lastChecked = new Date(data.last_checked);
+                    const timeAgo = Math.floor((new Date() - lastChecked) / 1000 / 60); // minutes
+                    statusBadge.title = `Last checked: ${timeAgo} minutes ago`;
+                }
             } else {
                 statusBadge.textContent = 'Error';
                 statusBadge.className = 'badge bg-danger';
@@ -634,15 +641,21 @@ function checkStatus(appId) {
     // Disable button and show loading
     if (checkButton) checkButton.disabled = true;
     statusBadge.className = 'badge bg-warning me-2';
-    statusBadge.textContent = 'Checking...';
+    statusBadge.textContent = 'Loading...';
     
     return fetch(`/check_status/${appId}`)
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
                 statusBadge.textContent = data.app_status;
-                // If status contains instance count, it's DOWN
                 statusBadge.className = `badge me-2 ${data.app_status.startsWith('DOWN') ? 'bg-danger' : 'bg-success'}`;
+                
+                // Add last checked time if available
+                if (data.last_checked) {
+                    const lastChecked = new Date(data.last_checked);
+                    const timeAgo = Math.floor((new Date() - lastChecked) / 1000 / 60); // minutes
+                    statusBadge.title = `Last checked: ${timeAgo} minutes ago`;
+                }
                 
                 // Also update instance statuses if they are visible
                 const instanceRows = document.querySelectorAll(`.instance-row[data-parent-id="${appId}"]`);
@@ -682,7 +695,7 @@ function checkInstanceStatus(instanceId) {
     if (!statusBadge) return Promise.resolve();
     
     statusBadge.className = 'badge bg-warning';
-    statusBadge.textContent = 'Checking...';
+    statusBadge.textContent = 'Loading...';
     
     return fetch(`/check_instance_status/${instanceId}`)
         .then(response => response.json())
@@ -690,6 +703,13 @@ function checkInstanceStatus(instanceId) {
             if (data.status === 'success') {
                 statusBadge.textContent = data.instance_status;
                 statusBadge.className = `badge ${data.instance_status === 'UP' ? 'bg-success' : 'bg-danger'}`;
+                
+                // Add last checked time if available
+                if (data.last_checked) {
+                    const lastChecked = new Date(data.last_checked);
+                    const timeAgo = Math.floor((new Date() - lastChecked) / 1000 / 60); // minutes
+                    statusBadge.title = `Last checked: ${timeAgo} minutes ago`;
+                }
             } else {
                 statusBadge.textContent = 'Error';
                 statusBadge.className = 'badge bg-danger';
@@ -723,10 +743,10 @@ async function processChunksWithDelay(chunks, processFn, delayMs = 1000) {
     }
 }
 
-// Start periodic status checks for visible instances
+// Start periodic UI updates
 document.addEventListener('DOMContentLoaded', function() {
-    let statusCheckInterval = setInterval(async () => {
-        // Check visible applications in chunks
+    let updateInterval = setInterval(async () => {
+        // Update visible applications
         const visibleApps = Array.from(document.querySelectorAll('tr[data-app-id]:not([style*="display: none"])'))
             .map(row => row.dataset.appId);
             
@@ -735,7 +755,7 @@ document.addEventListener('DOMContentLoaded', function() {
             await processChunksWithDelay(appChunks, checkStatus);
         }
         
-        // Check visible instances in chunks
+        // Update visible instances
         const visibleInstances = Array.from(document.querySelectorAll('.instance-row[style*="display: table-row"] [data-instance-id]'))
             .map(instance => instance.dataset.instanceId);
             
@@ -743,11 +763,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const instanceChunks = chunkArray(visibleInstances, 5);
             await processChunksWithDelay(instanceChunks, checkInstanceStatus);
         }
-    }, 30000);
+    }, 10000); // Update UI every 10 seconds
     
     // Clean up interval on page unload
     window.addEventListener('beforeunload', () => {
-        clearInterval(statusCheckInterval);
+        clearInterval(updateInterval);
     });
 });
 

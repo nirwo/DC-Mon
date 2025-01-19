@@ -5,8 +5,105 @@ import csv
 from datetime import datetime
 import socket
 import requests
+import threading
+import time
 
 main = Blueprint('main', __name__)
+
+def get_cached_status(app_id):
+    """Get cached status from DB without checking"""
+    try:
+        app = Application.query.get_or_404(app_id)
+        total_instances = len(app.instances)
+        down_instances = sum(1 for i in app.instances if i.status == 'DOWN')
+        
+        status = 'UP' if down_instances == 0 else f'DOWN ({down_instances}/{total_instances})'
+        last_checked = max([i.last_checked for i in app.instances if i.last_checked] or [app.last_checked]) if app.last_checked else None
+        
+        return jsonify({
+            'status': 'success',
+            'app_status': status,
+            'last_checked': last_checked.isoformat() if last_checked else None
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+def get_cached_instance_status(instance_id):
+    """Get cached instance status from DB without checking"""
+    try:
+        instance = ApplicationInstance.query.get_or_404(instance_id)
+        return jsonify({
+            'status': 'success',
+            'instance_status': instance.status,
+            'last_checked': instance.last_checked.isoformat() if instance.last_checked else None
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@main.route('/check_status/<int:app_id>')
+def check_status(app_id):
+    # Return cached status immediately
+    return get_cached_status(app_id)
+
+@main.route('/check_instance_status/<int:instance_id>')
+def check_instance_status(instance_id):
+    # Return cached status immediately
+    return get_cached_instance_status(instance_id)
+
+def background_status_check():
+    """Background task to check all application statuses"""
+    with app.app_context():
+        try:
+            applications = Application.query.all()
+            for app in applications:
+                down_count = 0
+                total_instances = len(app.instances)
+                
+                for instance in app.instances:
+                    try:
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.settimeout(2)
+                        result = sock.connect_ex((instance.host, instance.port or 80))
+                        sock.close()
+                        
+                        instance.status = 'UP' if result == 0 else 'DOWN'
+                        if instance.status == 'DOWN':
+                            down_count += 1
+                            
+                    except Exception:
+                        instance.status = 'DOWN'
+                        down_count += 1
+                    
+                    instance.last_checked = datetime.utcnow()
+                
+                app.status = 'UP' if down_count == 0 else 'DOWN'
+                app.last_checked = datetime.utcnow()
+            
+            db.session.commit()
+            
+        except Exception as e:
+            current_app.logger.error(f"Background status check error: {str(e)}")
+            db.session.rollback()
+
+def start_background_checker():
+    """Start the background status checker thread"""
+    def run_checker():
+        while True:
+            background_status_check()
+            time.sleep(30)  # Check every 30 seconds
+    
+    checker_thread = threading.Thread(target=run_checker, daemon=True)
+    checker_thread.start()
+
+@main.before_first_request
+def before_first_request():
+    start_background_checker()
 
 @main.route('/')
 def index():
@@ -173,114 +270,6 @@ def import_apps():
             'skipped': skipped,
             'errors': errors
         })
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-@main.route('/check_status/<int:app_id>')
-def check_status(app_id):
-    try:
-        app = Application.query.get_or_404(app_id)
-        all_up = True
-        down_count = 0
-        total_instances = len(app.instances)
-        error_messages = []
-        
-        for instance in app.instances:
-            try:
-                # Check if host is reachable
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(2)  # 2 second timeout
-                result = sock.connect_ex((instance.host, instance.port or 80))
-                sock.close()
-                
-                if result != 0:
-                    all_up = False
-                    down_count += 1
-                    error_messages.append(f"{instance.host}: Port {instance.port} is not accessible")
-                    
-            except socket.gaierror:
-                all_up = False
-                down_count += 1
-                error_messages.append(f"Could not resolve hostname: {instance.host}")
-            except socket.timeout:
-                all_up = False
-                down_count += 1
-                error_messages.append(f"{instance.host}: Connection timed out")
-            except Exception as e:
-                all_up = False
-                down_count += 1
-                error_messages.append(f"{instance.host}: {str(e)}")
-        
-        # Update application status
-        app.status = 'UP' if all_up else 'DOWN'
-        app.last_checked = datetime.utcnow()
-        db.session.commit()
-        
-        response = {
-            'status': 'success',
-            'app_status': app.status
-        }
-
-        # Add instance count if there are down instances
-        if down_count > 0:
-            response['app_status'] = f"DOWN ({down_count}/{total_instances})"
-            
-        if error_messages:
-            response['message'] = '; '.join(error_messages)
-            
-        return jsonify(response)
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-@main.route('/check_instance_status/<int:instance_id>')
-def check_instance_status(instance_id):
-    try:
-        instance = ApplicationInstance.query.get_or_404(instance_id)
-        status = 'DOWN'
-        error_message = None
-        
-        try:
-            # Check if host is reachable
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)  # 2 second timeout
-            result = sock.connect_ex((instance.host, instance.port or 80))
-            sock.close()
-            
-            if result == 0:
-                status = 'UP'
-            else:
-                error_message = f"Port {instance.port} is not accessible"
-                
-        except socket.gaierror:
-            error_message = f"Could not resolve hostname: {instance.host}"
-        except socket.timeout:
-            error_message = "Connection timed out"
-        except Exception as e:
-            error_message = str(e)
-            
-        # Update instance status
-        instance.status = status
-        instance.last_checked = datetime.utcnow()
-        db.session.commit()
-        
-        response = {
-            'status': 'success',
-            'instance_status': status
-        }
-        if error_message:
-            response['message'] = error_message
-            
-        return jsonify(response)
         
     except Exception as e:
         db.session.rollback()
@@ -604,22 +593,20 @@ def get_shutdown_sequence(app_id):
             
             for instance in app.instances:
                 try:
-                    url = instance.webui_url
-                    if not url:
-                        url = f"http://{instance.host}"
-                        if instance.port:
-                            url += f":{instance.port}"
+                    # Check if host is reachable
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(2)  # 2 second timeout
+                    result = sock.connect_ex((instance.host, instance.port or 80))
+                    sock.close()
                     
-                    response = requests.get(url, timeout=5)
-                    if response.status_code == 200:
-                        instance.status = 'running'
+                    if result != 0:
+                        all_running = False
                         all_stopped = False
                     else:
-                        instance.status = 'stopped'
-                        all_running = False
+                        instance.status = 'running'
                 except:
-                    instance.status = 'stopped'
                     all_running = False
+                    all_stopped = False
             
             if all_running:
                 app.state = 'up'
