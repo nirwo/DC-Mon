@@ -17,9 +17,33 @@ main = Blueprint('main', __name__)
 @main.route('/')
 def index():
     db = get_db()
-    applications = [Application.from_dict(app) for app in db.applications.find()]
-    teams = [Team.from_dict(team) for team in db.teams.find()]
-    return render_template('applications.html', applications=applications, teams=teams)
+    teams_data = list(db.teams.find())
+    teams = []
+    applications = []
+    
+    # Count applications per team
+    for team_data in teams_data:
+        team = Team.from_dict(team_data)
+        app_count = db.applications.count_documents({"team_id": str(team._id)})
+        team_dict = team.to_dict()
+        team_dict['applications'] = app_count
+        teams.append(team_dict)
+    
+    # Get applications with team info
+    for app_data in db.applications.find():
+        app = Application.from_dict(app_data)
+        if app.team_id:
+            team = db.teams.find_one({"_id": ObjectId(app.team_id)})
+            if team:
+                app_dict = app.to_dict()
+                app_dict['team'] = {'name': team['name']}
+                applications.append(app_dict)
+        else:
+            app_dict = app.to_dict()
+            app_dict['team'] = {'name': 'No Team'}
+            applications.append(app_dict)
+    
+    return render_template('index.html', teams=teams, applications=applications)
 
 @main.route('/teams')
 def teams():

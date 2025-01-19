@@ -33,7 +33,7 @@
                     {% for team in teams %}
                     <div class="list-group-item">
                         <h6 class="mb-1">{{ team.name }}</h6>
-                        <small>{{ team.applications|length }} applications</small>
+                        <small>{{ team.applications }} application{% if team.applications != 1 %}s{% endif %}</small>
                     </div>
                     {% endfor %}
                 </div>
@@ -50,21 +50,21 @@
             <div class="card-body">
                 <div class="list-group" id="applicationsList">
                     {% for app in applications %}
-                    <div class="list-group-item" id="app-{{ app.id }}">
+                    <div class="list-group-item" id="app-{{ app._id }}">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
                                 <h6 class="mb-1">{{ app.name }}</h6>
                                 <small>Team: {{ app.team.name }}</small>
                             </div>
                             <div class="d-flex align-items-center">
-                                <button class="btn btn-sm btn-outline-info me-2" onclick="checkStatus({{ app.id }})">
+                                <button class="btn btn-sm btn-outline-info me-2" onclick="checkStatus('{{ app._id }}')">
                                     <i class="bi bi-arrow-repeat"></i>
                                 </button>
-                                <button class="btn btn-sm btn-outline-primary me-2" onclick="viewShutdownSequence({{ app.id }})">
+                                <button class="btn btn-sm btn-outline-primary me-2" onclick="viewShutdownSequence('{{ app._id }}')">
                                     <i class="bi bi-list-ol"></i>
                                 </button>
-                                <span class="badge bg-{{ 'success' if app.status == 'running' else 'danger' }}">
-                                    {{ app.status }}
+                                <span class="badge bg-secondary">
+                                    unknown
                                 </span>
                             </div>
                         </div>
