@@ -8,23 +8,19 @@ services:
     environment:
       - FLASK_APP=run.py
       - FLASK_ENV=development
-      - DATABASE_URL=postgresql://dcmon:dcmon@db:5432/dcmon
+      - MONGODB_URI=mongodb://mongo:27017/dcmon
     depends_on:
-      - db
+      - mongo
     volumes:
       - .:/app
     command: flask run --host=0.0.0.0 --port=5001
 
-  db:
-    image: postgres:13-alpine
-    environment:
-      - POSTGRES_USER=dcmon
-      - POSTGRES_PASSWORD=dcmon
-      - POSTGRES_DB=dcmon
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+  mongo:
+    image: mongo:latest
     ports:
-      - "5432:5432"
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
 
 volumes:
-  postgres_data:
+  mongodb_data:
