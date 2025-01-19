@@ -666,7 +666,7 @@ function showAlert(type, message) {
     alertContainer.appendChild(alert);
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+$(document).ready(function() {
     // Initialize tooltips
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
@@ -674,7 +674,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Initialize DataTables with search
-    $('#activeTable').DataTable({
+    var activeTable = $('#activeTable').DataTable({
         pageLength: 25,
         order: [[0, 'asc']],
         dom: '<"d-flex justify-content-between align-items-center mb-3"<"d-flex align-items-center"l><"d-flex align-items-center"f>>rtip',
@@ -684,7 +684,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    $('#completedTable').DataTable({
+    var completedTable = $('#completedTable').DataTable({
         pageLength: 25,
         order: [[2, 'desc']],  // Sort by completion date
         dom: '<"d-flex justify-content-between align-items-center mb-3"<"d-flex align-items-center"l><"d-flex align-items-center"f>>rtip',
@@ -699,11 +699,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Bind custom search inputs to DataTables search
     $('#activeSearchInput').on('keyup', function() {
-        $('#activeTable').DataTable().search(this.value).draw();
+        activeTable.search(this.value).draw();
     });
     
     $('#completedSearchInput').on('keyup', function() {
-        $('#completedTable').DataTable().search(this.value).draw();
+        completedTable.search(this.value).draw();
     });
     
     // Check status of visible instances every 30 seconds
@@ -736,6 +736,39 @@ function toggleInstances(appId) {
     }
 }
 
+function checkInstanceStatus(instanceId) {
+    const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
+    const statusBadge = row.querySelector('.badge');
+    statusBadge.className = 'badge bg-warning';
+    statusBadge.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Checking...';
+
+    fetch(`/check_instance_status/${instanceId}`)
+        .then(response => response.json())
+        .then(data => {
+            let badgeClass = data.is_running ? 'bg-success' : 'bg-danger';
+            let status = data.is_running ? 'Running' : 'Stopped';
+            
+            statusBadge.className = `badge ${badgeClass}`;
+            statusBadge.innerHTML = status;
+            
+            // Update last checked time
+            const timeCell = row.querySelector('td:nth-child(4) small');
+            timeCell.textContent = new Date().toLocaleString();
+            
+            // Update tooltip with details if available
+            if (data.details && data.details.length > 0) {
+                statusBadge.setAttribute('data-bs-toggle', 'tooltip');
+                statusBadge.setAttribute('data-bs-placement', 'top');
+                statusBadge.setAttribute('title', data.details.join('\n'));
+                new bootstrap.Tooltip(statusBadge);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            statusBadge.className = 'badge bg-danger';
+            statusBadge.innerHTML = 'Error';
+        });
+}
 </script>
 
 <style>
