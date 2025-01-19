@@ -28,17 +28,17 @@ class Application(db.Model):
 
 class ApplicationInstance(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    application_id = db.Column(db.Integer, db.ForeignKey('application.id'), nullable=False)
-    host = db.Column(db.String(100), nullable=False)
+    application_id = db.Column(db.Integer, db.ForeignKey('application.id', ondelete='CASCADE'), nullable=False)
+    host = db.Column(db.String(128), nullable=False)
     port = db.Column(db.Integer)
-    webui_url = db.Column(db.String(200))
-    db_host = db.Column(db.String(100))
-    status = db.Column(db.String(20), default='unknown')
-    last_checked = db.Column(db.DateTime, default=datetime.utcnow)
-    error_message = db.Column(db.Text)
-
+    webui_url = db.Column(db.String(256))
+    db_host = db.Column(db.String(128))
+    status = db.Column(db.String(32), default='unknown')
+    details = db.Column(db.Text)  # JSON string of status details
+    last_checked = db.Column(db.DateTime)
+    
     def __repr__(self):
-        return f'<Instance {self.host}:{self.port}>'
+        return f'<ApplicationInstance {self.host}:{self.port}>'
 
 # Association table for application dependencies
 dependencies = db.Table('dependencies',

@@ -42,7 +42,10 @@
                     {% endif %}
                 </td>
                 <td>{{ instance.db_host }}</td>
-                <td class="status-{{ instance.status|lower }}">{{ instance.status }}</td>
+                <td class="status-{{ instance.status|lower }}" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ instance.details }}">
+                    <i class="bi {% if instance.status == 'running' %}bi-check-circle{% elif instance.status == 'stopped' %}bi-x-circle{% elif instance.status == 'error' %}bi-exclamation-triangle{% else %}bi-question-circle{% endif %}"></i>
+                    {{ instance.status|title }}
+                </td>
                 <td>{{ instance.last_checked.strftime('%Y-%m-%d %H:%M:%S') if instance.last_checked else 'Never' }}</td>
             </tr>
             {% endfor %}
