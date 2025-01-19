@@ -46,7 +46,15 @@
                             </td>
                             <td>{{ instance.db_host }}</td>
                             <td>
-                                <span class="badge bg-secondary">Unknown</span>
+                                <span class="badge {% if instance.status == 'running' %}bg-success{% elif instance.status == 'stopped' %}bg-danger{% else %}bg-secondary{% endif %}">
+                                    {% if instance.status == 'running' %}
+                                        <i class="bi bi-check-circle me-1"></i>Running
+                                    {% elif instance.status == 'stopped' %}
+                                        <i class="bi bi-x-circle me-1"></i>Stopped
+                                    {% else %}
+                                        <i class="bi bi-question-circle me-1"></i>{{ instance.status|title }}
+                                    {% endif %}
+                                </span>
                             </td>
                             <td>
                                 <div class="btn-group">
@@ -108,35 +116,38 @@ function checkInstanceStatus(instanceId) {
     fetch(`/check_instance_status/${instanceId}`)
         .then(response => response.json())
         .then(data => {
-            switch(data.status) {
-                case 'success':
-                    switch(data.current_status) {
-                        case 'running':
-                            statusBadge.className = 'badge bg-success';
-                            statusBadge.innerHTML = '<i class="bi bi-check-circle me-1"></i>Running';
-                            break;
-                        case 'stopped':
-                            statusBadge.className = 'badge bg-danger';
-                            statusBadge.innerHTML = '<i class="bi bi-x-circle me-1"></i>Stopped';
-                            break;
-                        case 'in_progress':
-                            statusBadge.className = 'badge bg-info';
-                            statusBadge.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>In Progress';
-                            break;
-                        default:
-                            statusBadge.className = 'badge bg-secondary';
-                            statusBadge.innerHTML = '<i class="bi bi-question-circle me-1"></i>Unknown';
-                    }
-                    break;
-                case 'warning':
-                    statusBadge.className = 'badge bg-warning';
-                    statusBadge.innerHTML = '<i class="bi bi-exclamation-circle me-1"></i>' + data.message;
-                    break;
-                case 'error':
-                    statusBadge.className = 'badge bg-danger';
-                    statusBadge.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Error';
-                    console.error(`Error checking ${data.host}:${data.port} - ${data.message}`);
-                    break;
+            let badgeClass = 'bg-secondary';
+            let icon = 'question-circle';
+            let text = 'Unknown';
+            
+            if (data.is_running) {
+                badgeClass = 'bg-success';
+                icon = 'check-circle';
+                text = 'Running';
+            } else if (data.status === 'error') {
+                badgeClass = 'bg-danger';
+                icon = 'exclamation-triangle';
+                text = 'Error';
+                console.error(`Error checking ${data.host}:${data.port} - ${data.message}`);
+            } else {
+                badgeClass = 'bg-danger';
+                icon = 'x-circle';
+                text = 'Stopped';
+            }
+            
+            statusBadge.className = `badge ${badgeClass}`;
+            statusBadge.innerHTML = `<i class="bi bi-${icon} me-1"></i>${text}`;
+            
+            // Show details in tooltip if available
+            if (data.details && data.details.length > 0) {
+                const tooltip = bootstrap.Tooltip.getInstance(statusBadge);
+                if (tooltip) {
+                    tooltip.dispose();
+                }
+                statusBadge.setAttribute('data-bs-toggle', 'tooltip');
+                statusBadge.setAttribute('data-bs-placement', 'top');
+                statusBadge.setAttribute('title', data.details.join('\n'));
+                new bootstrap.Tooltip(statusBadge);
             }
         })
         .catch(error => {
