@@ -1,4 +1,4 @@
-version: '3.8'
+version: '3'
 
 services:
   web:
@@ -8,11 +8,12 @@ services:
     environment:
       - FLASK_APP=run.py
       - FLASK_ENV=development
-      - MONGODB_URI=mongodb://mongo:27017/dcmon
-    depends_on:
-      - mongo
+      - MONGODB_URI=mongodb://mongo:27017/shutdown_manager
     volumes:
       - .:/app
+    depends_on:
+      mongo:
+        condition: service_healthy
     command: flask run --host=0.0.0.0 --port=5001
 
   mongo:
@@ -21,6 +22,12 @@ services:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
 volumes:
   mongodb_data:

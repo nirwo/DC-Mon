@@ -1,14 +1,12 @@
 import os
 from flask import Flask
 from flask_cors import CORS
-from config import Config
 from app.database import init_db
 from app.routes import main as main_bp
 from app.worker import start_background_checker
 
-def create_app(config_class=Config):
+def create_app():
     app = Flask(__name__)
-    app.config.from_object(config_class)
     CORS(app)
     
     # Register blueprints
