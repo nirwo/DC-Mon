@@ -186,6 +186,8 @@ def check_status(app_id):
     try:
         app = Application.query.get_or_404(app_id)
         all_up = True
+        down_count = 0
+        total_instances = len(app.instances)
         error_messages = []
         
         for instance in app.instances:
@@ -198,16 +200,20 @@ def check_status(app_id):
                 
                 if result != 0:
                     all_up = False
+                    down_count += 1
                     error_messages.append(f"{instance.host}: Port {instance.port} is not accessible")
                     
             except socket.gaierror:
                 all_up = False
+                down_count += 1
                 error_messages.append(f"Could not resolve hostname: {instance.host}")
             except socket.timeout:
                 all_up = False
+                down_count += 1
                 error_messages.append(f"{instance.host}: Connection timed out")
             except Exception as e:
                 all_up = False
+                down_count += 1
                 error_messages.append(f"{instance.host}: {str(e)}")
         
         # Update application status
@@ -219,6 +225,11 @@ def check_status(app_id):
             'status': 'success',
             'app_status': app.status
         }
+
+        # Add instance count if there are down instances
+        if down_count > 0:
+            response['app_status'] = f"DOWN ({down_count}/{total_instances})"
+            
         if error_messages:
             response['message'] = '; '.join(error_messages)
             

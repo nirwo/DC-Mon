@@ -264,21 +264,32 @@ function updateInstanceUrl(instanceId) {
 }
 
 function checkInstanceStatus(instanceId) {
-    const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
-    const statusBadge = row.querySelector('.badge');
+    const row = document.querySelector(`[data-instance-id="${instanceId}"]`)?.closest('tr');
+    if (!row) return Promise.resolve();
     
-    fetch(`/check_instance_status/${instanceId}`)
+    const statusBadge = row.querySelector('.badge');
+    if (!statusBadge) return Promise.resolve();
+    
+    statusBadge.className = 'badge bg-warning';
+    statusBadge.textContent = 'Checking...';
+    
+    return fetch(`/check_instance_status/${instanceId}`)
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
                 statusBadge.textContent = data.instance_status;
                 statusBadge.className = `badge ${data.instance_status === 'UP' ? 'bg-success' : 'bg-danger'}`;
+            } else {
+                statusBadge.textContent = 'Error';
+                statusBadge.className = 'badge bg-danger';
+                showAlert('danger', 'Error checking instance status: ' + data.message);
             }
         })
         .catch(error => {
             console.error('Error:', error);
             statusBadge.textContent = 'Error';
-            statusBadge.className = 'badge bg-warning';
+            statusBadge.className = 'badge bg-danger';
+            showAlert('danger', 'Error checking instance status');
         });
 }
 
@@ -630,7 +641,8 @@ function checkStatus(appId) {
         .then(data => {
             if (data.status === 'success') {
                 statusBadge.textContent = data.app_status;
-                statusBadge.className = `badge me-2 ${data.app_status === 'UP' ? 'bg-success' : 'bg-danger'}`;
+                // If status contains instance count, it's DOWN
+                statusBadge.className = `badge me-2 ${data.app_status.startsWith('DOWN') ? 'bg-danger' : 'bg-success'}`;
                 
                 // Also update instance statuses if they are visible
                 const instanceRows = document.querySelectorAll(`.instance-row[data-parent-id="${appId}"]`);
