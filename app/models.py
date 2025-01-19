@@ -39,9 +39,14 @@ class ApplicationInstance(db.Model):
     host = db.Column(db.String(120), nullable=False)
     port = db.Column(db.Integer)
     webui_url = db.Column(db.String(200))
-    db_host = db.Column(db.String(200))
+    db_host = db.Column(db.String(120))
     status = db.Column(db.String(20), default='unknown')  # unknown, running, stopped, in_progress
+    error_message = db.Column(db.String(200))
+    last_checked = db.Column(db.DateTime)
     
     __table_args__ = (
         db.UniqueConstraint('application_id', 'host', name='uix_app_host'),
     )
+    
+    def __repr__(self):
+        return f'<Instance {self.host}:{self.port}>'

@@ -7,14 +7,19 @@ from app import db
 from app.models import Application, ApplicationInstance
 
 def check_status(host, port):
+    """Check if host:port is accessible"""
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(2)
         result = sock.connect_ex((host, port or 80))
         sock.close()
-        return result == 0
-    except:
-        return False
+        return True if result == 0 else False, None
+    except socket.gaierror:
+        return False, "Could not resolve hostname"
+    except socket.timeout:
+        return False, "Connection timed out"
+    except Exception as e:
+        return False, str(e)
 
 def background_status_check():
     """Background task to check all application statuses"""
@@ -25,8 +30,10 @@ def background_status_check():
             total_instances = len(app.instances)
             
             for instance in app.instances:
-                instance.status = 'UP' if check_status(instance.host, instance.port) else 'DOWN'
-                if instance.status == 'DOWN':
+                is_up, error = check_status(instance.host, instance.port)
+                instance.status = 'UP' if is_up else 'DOWN'
+                instance.error_message = None if is_up else error
+                if not is_up:
                     down_count += 1
                 instance.last_checked = datetime.utcnow()
             

@@ -34,11 +34,22 @@ def get_cached_instance_status(instance_id):
     """Get cached instance status from DB without checking"""
     try:
         instance = ApplicationInstance.query.get_or_404(instance_id)
-        return jsonify({
+        error_message = None
+        
+        if instance.status == 'DOWN':
+            error_message = f"Port {instance.port} is not accessible on {instance.host}"
+        
+        response = {
             'status': 'success',
-            'instance_status': instance.status,
+            'instance_status': instance.status or 'DOWN',
             'last_checked': instance.last_checked.isoformat() if instance.last_checked else None
-        })
+        }
+        
+        if error_message:
+            response['message'] = error_message
+            
+        return jsonify(response)
+        
     except Exception as e:
         return jsonify({
             'status': 'error',
