@@ -134,21 +134,33 @@ def import_apps():
                     except (ValueError, TypeError):
                         app.shutdown_order = 0
                     
-                    # Create instance
+                    # Create or update instance
                     host = row['host'].strip()
                     port = row.get('port', '').strip()
                     webui_url = row.get('webui_url', '').strip()
                     db_host = row.get('db_host', '').strip()
                     
-                    instance = ApplicationInstance(
-                        host=host,
-                        port=port if port else None,
-                        webui_url=webui_url if webui_url else None,
-                        db_host=db_host if db_host else None
-                    )
+                    # Check for existing instance
+                    instance = ApplicationInstance.query.filter_by(
+                        application_id=app.id,
+                        host=host
+                    ).first()
                     
-                    app.instances.append(instance)
-                    db.session.add(instance)
+                    if instance:
+                        # Update existing instance
+                        instance.port = port if port else None
+                        instance.webui_url = webui_url if webui_url else None
+                        instance.db_host = db_host if db_host else None
+                    else:
+                        # Create new instance
+                        instance = ApplicationInstance(
+                            host=host,
+                            port=port if port else None,
+                            webui_url=webui_url if webui_url else None,
+                            db_host=db_host if db_host else None
+                        )
+                        app.instances.append(instance)
+                        db.session.add(instance)
                     
                     # Store dependencies
                     if 'dependencies' in row and row['dependencies']:
@@ -164,8 +176,11 @@ def import_apps():
                 db.session.commit()
             except Exception as e:
                 db.session.rollback()
-                errors.append(f"Error committing chunk: {str(e)}")
-                continue
+                errors.append(f"Database error: {str(e)}")
+                return jsonify({
+                    'error': 'Database error occurred',
+                    'details': errors
+                }), 500
         
         # Process dependencies after all apps are created
         for app, dependencies in dependencies_to_process:
@@ -185,7 +200,11 @@ def import_apps():
             db.session.commit()
         except Exception as e:
             db.session.rollback()
-            errors.append(f"Error committing dependencies: {str(e)}")
+            errors.append(f"Database error: {str(e)}")
+            return jsonify({
+                'error': 'Database error occurred',
+                'details': errors
+            }), 500
         
         return jsonify({
             'imported': imported,
@@ -269,7 +288,16 @@ def check_instance_status(instance_id):
             instance.status = 'stopped'
             
         instance.last_checked = datetime.utcnow()
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({
+                'status': 'error',
+                'host': instance.host,
+                'port': instance.port,
+                'message': f"Database error: {str(e)}"
+            })
         
         return jsonify({
             'status': 'success',
@@ -280,7 +308,16 @@ def check_instance_status(instance_id):
     except Exception as e:
         instance.status = 'unknown'
         instance.last_checked = datetime.utcnow()
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({
+                'status': 'error',
+                'host': instance.host,
+                'port': instance.port,
+                'message': f"Database error: {str(e)}"
+            })
         return jsonify({
             'status': 'error',
             'host': instance.host,
@@ -344,7 +381,15 @@ def shutdown_app(app_id):
                         'message': f'Failed to shutdown {app.name} - {instance.host}: {str(e)}'
                     }), 400
         
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({
+                'status': 'error',
+                'message': f"Database error: {str(e)}"
+            }), 400
+        
         return jsonify({
             'status': 'success',
             'message': 'Shutdown sequence initiated successfully'
@@ -363,7 +408,14 @@ def shutdown_instance(instance_id):
     try:
         # Mark instance as in_progress
         instance.status = 'in_progress'
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({
+                'status': 'error',
+                'message': f"Database error: {str(e)}"
+            }), 500
         
         # Here you would typically trigger an async task to handle the actual shutdown
         # For now, we'll just simulate success
@@ -427,7 +479,14 @@ def check_all_status():
             'name': app.name,
             'instances': app_results
         })
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': f"Database error: {str(e)}"
+        }), 400
     return jsonify(results)
 
 @main.route('/get_application/<int:app_id>')
@@ -504,7 +563,14 @@ def update_application(app_id):
                 if instance.id not in updated_ids:
                     db.session.delete(instance)
         
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({
+                'status': 'error',
+                'message': f"Database error: {str(e)}"
+            }), 400
         
         return jsonify({
             'status': 'success',
@@ -614,7 +680,14 @@ def mark_completed(app_id):
         app = Application.query.get_or_404(app_id)
         app.completed = True
         app.completed_at = datetime.utcnow()
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({
+                'status': 'error',
+                'message': f"Database error: {str(e)}"
+            }), 400
         
         return jsonify({
             'status': 'success',
@@ -633,7 +706,14 @@ def reactivate_application(app_id):
         app = Application.query.get_or_404(app_id)
         app.completed = False
         app.completed_at = None
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({
+                'status': 'error',
+                'message': f"Database error: {str(e)}"
+            }), 400
         
         return jsonify({
             'status': 'success',
@@ -651,7 +731,14 @@ def delete_application(app_id):
     try:
         app = Application.query.get_or_404(app_id)
         db.session.delete(app)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({
+                'status': 'error',
+                'message': f"Database error: {str(e)}"
+            }), 400
         
         return jsonify({
             'status': 'success',

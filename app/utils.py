@@ -43,18 +43,23 @@ def check_host_status(host, port=None):
     details = []
     is_running = True
     
+    if not host:
+        return False, ["No host specified"]
+    
     # Try ICMP ping
     try:
         response_time = ping(host, timeout=1)
         if response_time is None or response_time is False:
             details.append(f"Host {host} is not responding to ping")
             is_running = False
+        else:
+            details.append(f"Host {host} is responding to ping")
     except Exception as e:
         details.append(f"Error pinging {host}: {str(e)}")
         is_running = False
     
-    # Check TCP port if specified
-    if port:
+    # Check TCP port only if specified
+    if port and str(port).strip():
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(1)
@@ -64,9 +69,14 @@ def check_host_status(host, port=None):
             if result != 0:
                 details.append(f"Port {port} is not open on {host}")
                 is_running = False
+            else:
+                details.append(f"Port {port} is open on {host}")
+        except (ValueError, TypeError):
+            details.append(f"Invalid port number: {port}")
+            # Don't set is_running to False as port check is optional
         except Exception as e:
             details.append(f"Error checking port {port} on {host}: {str(e)}")
-            is_running = False
+            # Don't set is_running to False as port check is optional
     
     return is_running, details
 
