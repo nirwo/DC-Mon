@@ -1,7 +1,6 @@
 from flask import Blueprint, render_template, request, jsonify, current_app
-from app.models import db, Team, Application, ApplicationInstance
-from app.utils import check_application_status, check_host_status
-import csv
+from app import db
+from app.models import Application, ApplicationInstance, Team
 from datetime import datetime
 import socket
 import requests
@@ -58,7 +57,7 @@ def check_instance_status(instance_id):
 
 def background_status_check():
     """Background task to check all application statuses"""
-    with app.app_context():
+    with current_app.app_context():
         try:
             applications = Application.query.all()
             for app in applications:
@@ -100,10 +99,6 @@ def start_background_checker():
     
     checker_thread = threading.Thread(target=run_checker, daemon=True)
     checker_thread.start()
-
-@main.before_first_request
-def before_first_request():
-    start_background_checker()
 
 @main.route('/')
 def index():

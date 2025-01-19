@@ -3,46 +3,29 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 import os
 import threading
+from config import Config
 
 db = SQLAlchemy()
 migrate = Migrate()
 
-def create_app():
+def create_app(config_class=Config):
     app = Flask(__name__)
-    app.config['SECRET_KEY'] = 'dev'
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///shutdown_manager.db'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    
-    # Basic SQLAlchemy settings
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_pre_ping': True,
-        'pool_recycle': 300,
-    }
-    
-    # SQLite optimizations
-    app.config['SQLALCHEMY_ENGINE_OPTIONS']['connect_args'] = {
-        'timeout': 60,
-        'check_same_thread': False
-    }
-    
+    app.config.from_object(config_class)
+
     db.init_app(app)
     migrate.init_app(app, db)
     
-    with app.app_context():
-        db.create_all()  # Create database tables
-        
-    # Start background worker for status checks
-    def start_background_worker():
-        from app.worker import start_background_checker
-        with app.app_context():
-            start_background_checker()
+    from .routes import main as main_bp
+    app.register_blueprint(main_bp)
     
-    if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
-        worker_thread = threading.Thread(target=start_background_worker)
-        worker_thread.daemon = True
-        worker_thread.start()
+    with app.app_context():
+        db.create_all()
         
-    from .routes import main
-    app.register_blueprint(main)
+        # Start background worker for status checks
+        if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+            from app.worker import start_background_checker
+            worker_thread = threading.Thread(target=start_background_checker)
+            worker_thread.daemon = True
+            worker_thread.start()
     
     return app
