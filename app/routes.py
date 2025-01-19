@@ -117,10 +117,75 @@ def check_status(instance_id):
         logger.error(f"Error in check_status: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)})
 
-@main.route('/api/import_data', methods=['POST'])
-def import_data():
+@main.route('/import_data', methods=['POST'])
+def import_data_file():
     try:
-        data = request.get_json()
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+            
+        file = request.files['file']
+        if not file.filename:
+            return jsonify({'error': 'No file selected'}), 400
+            
+        if file.filename.endswith('.csv'):
+            # Handle CSV import
+            content = file.read().decode('utf-8')
+            reader = csv.DictReader(content.splitlines())
+            
+            # Group by team and application
+            data = {'teams': [], 'applications': [], 'instances': []}
+            app_instances = {}
+            
+            for row in reader:
+                team_name = row['team'].strip()
+                app_name = row['name'].strip()
+                key = f"{team_name}:{app_name}"
+                
+                if team_name not in [t['name'] for t in data['teams']]:
+                    data['teams'].append({'_id': str(ObjectId()), 'name': team_name})
+                
+                if key not in app_instances:
+                    app_instances[key] = {
+                        '_id': str(ObjectId()),
+                        'name': app_name,
+                        'team_id': next(t['_id'] for t in data['teams'] if t['name'] == team_name)
+                    }
+                    data['applications'].append(app_instances[key])
+                
+                instance = {
+                    'application_id': app_instances[key]['_id'],
+                    'host': row['host'].strip(),
+                    'port': int(row['port']) if 'port' in row and row['port'] else None,
+                    'webui_url': row['webui_url'].strip() if 'webui_url' in row else None,
+                    'db_host': row['db_host'].strip() if 'db_host' in row else None
+                }
+                data['instances'].append(instance)
+            
+        elif file.filename.endswith('.json'):
+            # Handle JSON import
+            content = file.read().decode('utf-8')
+            data = json.loads(content)
+            
+        else:
+            return jsonify({
+                'error': 'Invalid file format. Please upload a CSV or JSON file.'
+            }), 400
+
+        # Process the data using the API endpoint
+        response = process_import_data(data)
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error in import_data: {str(e)}")
+        return jsonify({
+            'error': f'Import failed: {str(e)}'
+        }), 500
+
+@main.route('/api/import_data', methods=['POST'])
+def process_import_data(data=None):
+    try:
+        if data is None:
+            data = request.get_json()
         db = get_db()
         
         # First, process teams
@@ -172,7 +237,7 @@ def import_data():
                 
                 # Check if instance already exists
                 existing_instance = db.application_instances.find_one({
-                    'application_id': ObjectId(new_app_id),
+                    'application_id': new_app_id,
                     'host': instance_data['host']
                 })
                 if existing_instance:
@@ -475,9 +540,8 @@ def add_instance(app_id):
 def list_instances(app_id):
     try:
         db = get_db()
-        app_oid = ObjectId(app_id)
-        instances = [ApplicationInstance.from_dict(inst) for inst in db.application_instances.find({"application_id": app_oid})]
-        return jsonify([inst.to_dict() for inst in instances])
+        instances = list(db.application_instances.find({"application_id": app_id}))
+        return jsonify([ApplicationInstance.from_dict(inst).to_dict() for inst in instances])
     except Exception as e:
         logger.error(f"Error listing instances: {str(e)}")
         return jsonify({"error": str(e)}), 500
