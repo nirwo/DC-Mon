@@ -117,121 +117,85 @@ def check_status(instance_id):
         logger.error(f"Error in check_status: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)})
 
-@main.route('/import_data', methods=['POST'])
+@main.route('/api/import_data', methods=['POST'])
 def import_data():
     try:
-        if 'file' not in request.files:
-            return jsonify({'status': 'error', 'message': 'No file uploaded'}), 400
-            
-        file = request.files['file']
-        if not file.filename:
-            return jsonify({'status': 'error', 'message': 'No file selected'}), 400
-            
-        if file.filename.endswith('.csv'):
-            # Handle CSV import
-            content = file.read().decode('utf-8')
-            reader = csv.DictReader(content.splitlines())
-            
-            # Group by team and application
-            data = {'teams': [], 'applications': []}
-            app_instances = {}
-            
-            for row in reader:
-                team_name = row['team'].strip()
-                app_name = row['name'].strip()
-                key = f"{team_name}:{app_name}"
-                
-                if team_name not in [t['name'] for t in data['teams']]:
-                    data['teams'].append({'name': team_name})
-                
-                if key not in app_instances:
-                    app_instances[key] = {
-                        'name': app_name,
-                        'team': team_name,
-                        'instances': []
-                    }
-                
-                app_instances[key]['instances'].append({
-                    'host': row['host'].strip(),
-                    'port': int(row['port']) if 'port' in row and row['port'] else None,
-                    'webui_url': row['webui_url'].strip() if 'webui_url' in row else None,
-                    'db_host': row['db_host'].strip() if 'db_host' in row else None
-                })
-            
-            data['applications'] = list(app_instances.values())
-            
-        elif file.filename.endswith('.json'):
-            # Handle JSON import
-            content = file.read().decode('utf-8')
-            data = json.loads(content)
-            
-        else:
-            return jsonify({
-                'status': 'error',
-                'message': 'Invalid file format. Please upload a CSV or JSON file.'
-            }), 400
-        
+        data = request.get_json()
         db = get_db()
         
-        # First create teams
+        # First, process teams
+        team_map = {}  # Map old team IDs to new team IDs
         for team_data in data.get('teams', []):
-            if not isinstance(team_data, dict) or 'name' not in team_data:
-                continue
-                
-            team = db.teams.find_one({'name': team_data['name']})
-            if not team:
-                db.teams.insert_one(team_data)
+            # Check if team already exists
+            existing_team = db.teams.find_one({'name': team_data['name']})
+            if existing_team:
+                team_map[team_data['_id']] = str(existing_team['_id'])
+            else:
+                team = Team(name=team_data['name'])
+                result = db.teams.insert_one(team.to_dict())
+                team_map[team_data['_id']] = str(result.inserted_id)
         
-        # Then create applications and instances
+        # Process applications
+        app_map = {}  # Map old app IDs to new app IDs
         for app_data in data.get('applications', []):
-            if not isinstance(app_data, dict) or 'name' not in app_data or 'team' not in app_data:
-                continue
+            try:
+                # Map team ID if it exists
+                if app_data.get('team_id'):
+                    app_data['team_id'] = team_map.get(app_data['team_id'])
                 
-            team = db.teams.find_one({'name': app_data['team']})
-            if not team:
-                continue
-                
-            app = db.applications.find_one({'name': app_data['name'], 'team_id': team['_id']})
-            if not app:
-                app = {
-                    'name': app_data['name'],
-                    'team_id': team['_id']
-                }
-                db.applications.insert_one(app)
-            
-            for instance_data in app_data.get('instances', []):
-                if not isinstance(instance_data, dict) or 'host' not in instance_data:
+                # Check if application already exists
+                existing_app = db.applications.find_one({'name': app_data['name']})
+                if existing_app:
+                    app_map[app_data['_id']] = str(existing_app['_id'])
                     continue
-                    
-                instance = db.application_instances.find_one({
-                    'application_id': app['_id'],
+                
+                app = Application(
+                    name=app_data['name'],
+                    team_id=app_data.get('team_id')
+                )
+                app_dict = app.to_dict()
+                app_dict['_id'] = ObjectId()
+                result = db.applications.insert_one(app_dict)
+                app_map[app_data['_id']] = str(result.inserted_id)
+                
+            except Exception as e:
+                logger.error(f"Error importing application {app_data.get('name')}: {str(e)}")
+                continue
+        
+        # Process instances
+        for instance_data in data.get('instances', []):
+            try:
+                # Map application ID
+                new_app_id = app_map.get(instance_data['application_id'])
+                if not new_app_id:
+                    continue
+                
+                # Check if instance already exists
+                existing_instance = db.application_instances.find_one({
+                    'application_id': ObjectId(new_app_id),
                     'host': instance_data['host']
                 })
+                if existing_instance:
+                    continue
                 
-                if not instance:
-                    instance = {
-                        'application_id': app['_id'],
-                        'host': instance_data['host'],
-                        'port': instance_data.get('port'),
-                        'webui_url': instance_data.get('webui_url'),
-                        'db_host': instance_data.get('db_host'),
-                        'status': 'unknown'
-                    }
-                    db.application_instances.insert_one(instance)
-                else:
-                    db.application_instances.update_one(
-                        {'_id': instance['_id']},
-                        {'$set': instance_data}
-                    )
+                instance = ApplicationInstance(
+                    application_id=new_app_id,
+                    host=instance_data['host'],
+                    port=instance_data.get('port'),
+                    webui_url=instance_data.get('webui_url'),
+                    db_host=instance_data.get('db_host')
+                )
+                db.application_instances.insert_one(instance.to_dict())
+                
+            except Exception as e:
+                logger.error(f"Error importing instance {instance_data.get('host')}: {str(e)}")
+                continue
         
-        return jsonify({'status': 'success', 'message': 'Data imported successfully'})
+        return jsonify({"message": "Import completed successfully"}), 200
         
     except Exception as e:
-        logger.error(f"Error in import_data: {str(e)}")
-        return jsonify({
-            'status': 'error',
-            'message': f'Import failed: {str(e)}'
-        }), 500
+        logger.error(f"Import error: {str(e)}")
+        return jsonify({"error": str(e)}), 400
 
 @main.route('/delete_instance/<int:instance_id>', methods=['POST'])
 def delete_instance(instance_id):
