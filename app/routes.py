@@ -267,12 +267,11 @@ def check_instance_status(instance_id):
         # Use check_host_status from utils
         is_running, details = check_host_status(instance.host, instance.port)
         
-        if is_running:
-            instance.status = 'running'
-        else:
-            instance.status = 'stopped'
-            
+        # Update instance status based on check results
+        instance.status = 'running' if is_running else 'stopped'
         instance.last_checked = datetime.utcnow()
+        
+        # Commit changes
         try:
             db.session.commit()
         except Exception as e:
@@ -282,20 +281,81 @@ def check_instance_status(instance_id):
                 'host': instance.host,
                 'port': instance.port,
                 'message': f"Database error: {str(e)}"
-            })
+            }), 500
         
+        # Return detailed status
         return jsonify({
-            'status': 'success',
+            'status': instance.status,
             'host': instance.host,
             'port': instance.port,
             'is_running': is_running,
-            'details': details
+            'details': details,
+            'last_checked': instance.last_checked.isoformat() if instance.last_checked else None
         })
+        
     except Exception as e:
+        db.session.rollback()
         return jsonify({
             'status': 'error',
             'host': instance.host,
             'port': instance.port,
+            'message': str(e)
+        }), 500
+
+@main.route('/check_all_status')
+def check_all_status():
+    results = []
+    try:
+        applications = Application.query.all()
+        for app in applications:
+            app_results = []
+            app_is_running = True
+            
+            for instance in app.instances:
+                is_running, details = check_host_status(instance.host, instance.port)
+                
+                # Update instance status
+                instance.status = 'running' if is_running else 'stopped'
+                instance.last_checked = datetime.utcnow()
+                
+                if not is_running:
+                    app_is_running = False
+                
+                app_results.append({
+                    'host': instance.host,
+                    'port': instance.port,
+                    'status': instance.status,
+                    'details': details,
+                    'last_checked': instance.last_checked.isoformat() if instance.last_checked else None
+                })
+            
+            # Update application status
+            app.state = 'up' if app_is_running else 'down'
+            results.append({
+                'id': app.id,
+                'name': app.name,
+                'state': app.state,
+                'instances': app_results
+            })
+        
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({
+                'status': 'error',
+                'message': f"Database error: {str(e)}"
+            }), 500
+            
+        return jsonify({
+            'status': 'success',
+            'results': results
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
             'message': str(e)
         }), 500
 
@@ -402,66 +462,6 @@ def shutdown_instance(instance_id):
             'status': 'error',
             'message': str(e)
         }), 500
-
-@main.route('/check_all_status')
-def check_all_status():
-    apps = Application.query.all()
-    results = []
-    for app in apps:
-        app_results = []
-        for instance in app.instances:
-            try:
-                # Try to connect to the host and port
-                if not instance.port:  # Skip if no port specified
-                    instance.status = 'unknown'
-                    instance.last_checked = datetime.utcnow()
-                    app_results.append({
-                        'host': instance.host,
-                        'port': None,
-                        'status': 'unknown',
-                        'message': 'No port specified'
-                    })
-                    continue
-                    
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(2)  # 2 second timeout
-                result = sock.connect_ex((instance.host, instance.port))
-                sock.close()
-                
-                if result == 0:
-                    instance.status = 'running'
-                else:
-                    instance.status = 'stopped'
-                    
-                instance.last_checked = datetime.utcnow()
-                app_results.append({
-                    'host': instance.host,
-                    'port': instance.port,
-                    'status': instance.status
-                })
-            except Exception as e:
-                instance.status = 'unknown'
-                instance.last_checked = datetime.utcnow()
-                app_results.append({
-                    'host': instance.host,
-                    'port': instance.port,
-                    'status': 'error',
-                    'message': str(e)
-                })
-        results.append({
-            'id': app.id,
-            'name': app.name,
-            'instances': app_results
-        })
-    try:
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            'status': 'error',
-            'message': f"Database error: {str(e)}"
-        }), 400
-    return jsonify(results)
 
 @main.route('/get_application/<int:app_id>')
 def get_application(app_id):
