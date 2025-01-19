@@ -12,6 +12,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+ENV PYTHONPATH=/app
+ENV FLASK_APP=app
+ENV FLASK_ENV=development
+ENV FLASK_RUN_PORT=5001
+
 EXPOSE 5001
 
-CMD ["python", "-m", "flask", "run", "--host=0.0.0.0", "--port=5001"]
+CMD ["bash", "-c", "python app/migrate.py && python -m flask run --host=0.0.0.0 --port=5001"]
