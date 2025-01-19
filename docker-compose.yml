@@ -6,15 +6,16 @@ services:
     ports:
       - "5001:5001"
     environment:
-      - FLASK_APP=run.py
+      - FLASK_APP=/app/run.py
       - FLASK_ENV=development
       - MONGODB_URI=mongodb://mongo:27017/shutdown_manager
+      - PYTHONPATH=/app
     volumes:
       - .:/app
     depends_on:
       mongo:
         condition: service_healthy
-    command: flask run --host=0.0.0.0 --port=5001
+    command: python -m flask run --host=0.0.0.0 --port=5001
 
   mongo:
     image: mongo:latest
