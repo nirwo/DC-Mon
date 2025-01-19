@@ -48,22 +48,51 @@
                 <small class="text-muted" id="lastUpdateTime"></small>
             </div>
             <div class="card-body">
+                <div class="row mb-4">
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-header">Not Started</div>
+                            <div class="card-body" id="notStartedList" ondrop="drop(event)" ondragover="allowDrop(event)">
+                                <!-- Applications will be dynamically added here -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-header">In Progress</div>
+                            <div class="card-body" id="inProgressList" ondrop="drop(event)" ondragover="allowDrop(event)">
+                                <!-- Applications will be dynamically added here -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-header">Completed</div>
+                            <div class="card-body" id="completedList" ondrop="drop(event)" ondragover="allowDrop(event)">
+                                <!-- Applications will be dynamically added here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <div class="list-group" id="applicationsList">
                     {% for app in applications %}
-                    <div class="list-group-item" id="app-{{ app._id }}">
+                    <div class="list-group-item" id="app-{{ app._id }}" draggable="true" ondragstart="drag(event)">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
                                 <h6 class="mb-1">{{ app.name }}</h6>
                                 <small>Team: {{ app.team.name }}</small>
                             </div>
                             <div class="d-flex align-items-center">
-                                <button class="btn btn-sm btn-outline-info me-2" onclick="checkStatus('{{ app._id }}')">
-                                    <i class="bi bi-arrow-repeat"></i>
+                                <div class="form-check form-switch me-2">
+                                    <input class="form-check-input" type="checkbox" id="toggle-{{ app._id }}" onchange="toggleApplication('{{ app._id }}')">
+                                </div>
+                                <button class="btn btn-sm btn-outline-info me-2" onclick="runTests('{{ app._id }}')">
+                                    <i class="bi bi-play-circle"></i> Run Tests
                                 </button>
-                                <button class="btn btn-sm btn-outline-primary me-2" onclick="viewShutdownSequence('{{ app._id }}')">
-                                    <i class="bi bi-list-ol"></i>
+                                <button class="btn btn-sm btn-outline-primary me-2" onclick="viewTestResults('{{ app._id }}')">
+                                    <i class="bi bi-list-check"></i>
                                 </button>
-                                <span class="badge bg-secondary">
+                                <span class="badge bg-secondary" id="status-{{ app._id }}">
                                     unknown
                                 </span>
                             </div>
@@ -101,6 +130,21 @@
     </div>
 </div>
 
+<!-- Test Results Modal -->
+<div class="modal fade" id="testResultsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Test Results</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="testResults"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Shutdown Sequence Modal -->
 <div class="modal fade" id="shutdownSequenceModal" tabindex="-1">
     <div class="modal-dialog">
@@ -119,6 +163,111 @@
 
 {% block scripts %}
 <script>
+function allowDrop(ev) {
+    ev.preventDefault();
+}
+
+function drag(ev) {
+    ev.dataTransfer.setData("text", ev.target.id);
+}
+
+function drop(ev) {
+    ev.preventDefault();
+    var data = ev.dataTransfer.getData("text");
+    var draggedElement = document.getElementById(data);
+    var targetList = ev.target.closest('[id$="List"]');
+    if (targetList) {
+        targetList.appendChild(draggedElement);
+        updateApplicationState(data.split('-')[1], targetList.id.replace('List', ''));
+    }
+}
+
+function updateApplicationState(appId, state) {
+    fetch(`/api/applications/${appId}/state`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({state: state})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+        }
+    });
+}
+
+function toggleApplication(appId) {
+    const toggle = document.getElementById(`toggle-${appId}`);
+    fetch(`/api/applications/${appId}/toggle`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({enabled: toggle.checked})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+            toggle.checked = !toggle.checked;
+        }
+    });
+}
+
+function runTests(appId) {
+    const statusBadge = document.getElementById(`status-${appId}`);
+    statusBadge.className = 'badge bg-warning';
+    statusBadge.textContent = 'Testing...';
+    
+    fetch(`/api/applications/${appId}/run-tests`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            statusBadge.className = 'badge bg-danger';
+            statusBadge.textContent = 'Test Failed';
+            alert('Error: ' + data.error);
+        } else {
+            statusBadge.className = 'badge bg-success';
+            statusBadge.textContent = 'Test Passed';
+        }
+    });
+}
+
+function viewTestResults(appId) {
+    fetch(`/api/applications/${appId}/test-results`)
+    .then(response => response.json())
+    .then(data => {
+        const resultsDiv = document.getElementById('testResults');
+        if (data.error) {
+            resultsDiv.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+        } else {
+            let html = '<div class="list-group">';
+            data.results.forEach(result => {
+                const status = result.passed ? 'success' : 'danger';
+                html += `
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">${result.name}</h6>
+                                <small>${result.description}</small>
+                            </div>
+                            <span class="badge bg-${status}">${result.passed ? 'Passed' : 'Failed'}</span>
+                        </div>
+                        ${result.error ? `<div class="text-danger mt-2"><small>${result.error}</small></div>` : ''}
+                    </div>
+                `;
+            });
+            html += '</div>';
+            resultsDiv.innerHTML = html;
+        }
+        new bootstrap.Modal(document.getElementById('testResultsModal')).show();
+    });
+}
+
 function importCSV() {
     const fileInput = document.getElementById('csvFile');
     const formData = new FormData();
@@ -148,37 +297,13 @@ function updateLastChecked() {
         `Last updated: ${now.toLocaleTimeString()}`;
 }
 
-function updateAppStatus(appId, status, details) {
-    const appElement = document.getElementById(`app-${appId}`);
-    const statusBadge = appElement.querySelector('.badge');
-    const detailsDiv = appElement.querySelector('.details');
-    
-    statusBadge.className = `badge bg-${status === 'running' ? 'success' : 'danger'}`;
-    statusBadge.textContent = status;
-    
-    if (details && details.length > 0) {
-        detailsDiv.innerHTML = details.map(detail => `<small class="text-muted d-block">${detail}</small>`).join('');
-        detailsDiv.classList.remove('d-none');
-    }
-}
-
 function checkStatus(appId) {
-    fetch(`/check_status/${appId}`)
+    fetch(`/api/applications/${appId}/status`)
         .then(response => response.json())
         .then(data => {
-            updateAppStatus(appId, data.status, data.details);
-            updateLastChecked();
-        })
-        .catch(error => console.error('Error:', error));
-}
-
-function checkAllStatus() {
-    fetch('/check_all_status')
-        .then(response => response.json())
-        .then(data => {
-            Object.entries(data).forEach(([appId, appData]) => {
-                updateAppStatus(appId, appData.status, appData.details);
-            });
+            const statusBadge = document.getElementById(`status-${appId}`);
+            statusBadge.className = `badge bg-${data.status === 'running' ? 'success' : 'danger'}`;
+            statusBadge.textContent = data.status;
             updateLastChecked();
         })
         .catch(error => console.error('Error:', error));
@@ -209,10 +334,35 @@ function viewShutdownSequence(appId) {
         .catch(error => console.error('Error:', error));
 }
 
+// Initialize application states
+document.addEventListener('DOMContentLoaded', function() {
+    fetch('/api/applications/states')
+        .then(response => response.json())
+        .then(data => {
+            data.forEach(app => {
+                const appElement = document.getElementById(`app-${app._id}`);
+                if (appElement) {
+                    const targetList = document.getElementById(`${app.state}List`);
+                    if (targetList) {
+                        targetList.appendChild(appElement);
+                    }
+                }
+            });
+        });
+});
+
 // Check all status every 30 seconds
-setInterval(checkAllStatus, 30000);
+setInterval(() => {
+    document.querySelectorAll('[id^="app-"]').forEach(app => {
+        const appId = app.id.split('-')[1];
+        checkStatus(appId);
+    });
+}, 30000);
 
 // Initial status check
-checkAllStatus();
+document.querySelectorAll('[id^="app-"]').forEach(app => {
+    const appId = app.id.split('-')[1];
+    checkStatus(appId);
+});
 </script>
 {% endblock %}

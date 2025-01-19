@@ -29,7 +29,7 @@ def index():
         team_dict['applications'] = app_count
         teams.append(team_dict)
     
-    # Get applications with team info
+    # Get applications with team info and state
     for app_data in db.applications.find():
         app = Application.from_dict(app_data)
         if app.team_id:
@@ -37,10 +37,14 @@ def index():
             if team:
                 app_dict = app.to_dict()
                 app_dict['team'] = {'name': team['name']}
+                app_dict['state'] = app_data.get('state', 'notStarted')
+                app_dict['enabled'] = app_data.get('enabled', False)
                 applications.append(app_dict)
         else:
             app_dict = app.to_dict()
             app_dict['team'] = {'name': 'No Team'}
+            app_dict['state'] = app_data.get('state', 'notStarted')
+            app_dict['enabled'] = app_data.get('enabled', False)
             applications.append(app_dict)
     
     return render_template('index.html', teams=teams, applications=applications)
@@ -636,3 +640,97 @@ def delete_team(team_id):
         return jsonify({"message": "Team deleted successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@main.route('/api/applications/<app_id>/state', methods=['POST'])
+def update_application_state(app_id):
+    db = get_db()
+    data = request.get_json()
+    state = data.get('state')
+    
+    if state not in ['notStarted', 'inProgress', 'completed']:
+        return jsonify({'error': 'Invalid state'}), 400
+        
+    try:
+        db.applications.update_one(
+            {'_id': ObjectId(app_id)},
+            {'$set': {'state': state}}
+        )
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/applications/states')
+def get_application_states():
+    db = get_db()
+    applications = []
+    for app in db.applications.find():
+        applications.append({
+            '_id': str(app['_id']),
+            'state': app.get('state', 'notStarted')
+        })
+    return jsonify(applications)
+
+@main.route('/api/applications/<app_id>/toggle', methods=['POST'])
+def toggle_application(app_id):
+    db = get_db()
+    data = request.get_json()
+    enabled = data.get('enabled', False)
+    
+    try:
+        db.applications.update_one(
+            {'_id': ObjectId(app_id)},
+            {'$set': {'enabled': enabled}}
+        )
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/applications/<app_id>/status')
+def get_application_status(app_id):
+    db = get_db()
+    try:
+        app = db.applications.find_one({'_id': ObjectId(app_id)})
+        if not app:
+            return jsonify({'error': 'Application not found'}), 404
+            
+        enabled = app.get('enabled', False)
+        test_status = app.get('test_status', 'unknown')
+        
+        return jsonify({
+            'status': 'running' if enabled else 'stopped',
+            'test_status': test_status
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/applications/<app_id>/run-tests', methods=['POST'])
+def run_application_tests(app_id):
+    db = get_db()
+    try:
+        app = db.applications.find_one({'_id': ObjectId(app_id)})
+        if not app:
+            return jsonify({'error': 'Application not found'}), 404
+            
+        # Queue test job in test runner container
+        test_job = {
+            'app_id': str(app_id),
+            'status': 'pending',
+            'created_at': datetime.utcnow()
+        }
+        db.test_jobs.insert_one(test_job)
+        
+        return jsonify({'status': 'success', 'message': 'Test job queued'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/applications/<app_id>/test-results')
+def get_test_results(app_id):
+    db = get_db()
+    try:
+        results = list(db.test_results.find({'app_id': str(app_id)}).sort('created_at', -1).limit(1))
+        if not results:
+            return jsonify({'results': []})
+            
+        return jsonify({'results': results[0].get('results', [])})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

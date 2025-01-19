@@ -1,15 +1,14 @@
-version: '3'
+version: '3.8'
 
 services:
   web:
     build: .
     ports:
-      - "5001:5001"
+      - "5001:5000"
     environment:
-      - FLASK_APP=/app/run.py
+      - FLASK_APP=app
       - FLASK_ENV=development
       - MONGODB_URI=mongodb://mongo:27017/shutdown_manager
-      - PYTHONPATH=/app
     volumes:
       - .:/app
     depends_on:
@@ -29,6 +28,18 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+
+  test_runner:
+    build: 
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/shutdown_manager
+    volumes:
+      - .:/app
+    depends_on:
+      mongo:
+        condition: service_healthy
 
 volumes:
   mongodb_data:
