@@ -467,150 +467,90 @@ function deleteApplication(id) {
     });
 }
 
-function editApplication(id) {
-    console.log('Editing application:', id);
-    // Clear previous data
-    document.getElementById('instancesList').innerHTML = '';
+function editApplication(appId) {
+    const app = document.querySelector(`tr[data-app-id="${appId}"]`);
+    const name = app.querySelector('td:nth-child(1)').textContent.trim();
+    const team = app.querySelector('td:nth-child(2)').textContent.trim();
     
-    // Load application data
-    fetch(`/get_application/${id}`)
+    document.getElementById('editAppId').value = appId;
+    document.getElementById('editAppName').value = name;
+    document.getElementById('editAppTeam').value = team;
+    
+    // Load all available systems
+    fetch('/get_all_systems')
         .then(response => response.json())
-        .then(result => {
-            console.log('Application data:', result);
-            if (result.status === 'success') {
-                const data = result.data;
-                document.getElementById('editAppId').value = data.id;
-                document.getElementById('editAppName').value = data.name;
-                document.getElementById('editTeam').value = data.team_id;
-                document.getElementById('editShutdownOrder').value = data.shutdown_order;
+        .then(data => {
+            if (data.status === 'success') {
+                const dependenciesList = document.getElementById('dependenciesList');
+                dependenciesList.innerHTML = '';
                 
-                // Set dependencies
-                const dependenciesSelect = document.getElementById('editDependencies');
-                Array.from(dependenciesSelect.options).forEach(option => {
-                    option.selected = data.dependencies.includes(parseInt(option.value));
-                });
+                data.systems.sort((a, b) => a.name.localeCompare(b.name));
                 
-                // Remove self from dependencies options
-                const selfOption = dependenciesSelect.querySelector(`option[value="${data.id}"]`);
-                if (selfOption) {
-                    selfOption.remove();
-                }
-                
-                // Add instances
-                data.instances.forEach(instance => {
-                    addInstance(instance);
-                });
-                
-                // Show modal
-                const modal = new bootstrap.Modal(document.getElementById('editModal'));
-                modal.show();
-            } else {
-                showAlert('danger', result.message || 'Failed to load application details');
-            }
-        })
-        .catch(error => {
-            console.error('Error loading application:', error);
-            showAlert('danger', 'Failed to load application details: ' + error.message);
-        });
-}
-
-function addInstance(data = null) {
-    console.log('Adding instance:', data);
-    const template = document.getElementById('instanceTemplate');
-    const clone = template.content.cloneNode(true);
-    const container = document.getElementById('instancesList');
-    
-    if (data) {
-        clone.querySelector('.instance-id').value = data.id;
-        clone.querySelector('.instance-host').value = data.host;
-        clone.querySelector('.instance-port').value = data.port;
-        clone.querySelector('.instance-webui').value = data.webui_url;
-        clone.querySelector('.instance-db').value = data.db_host;
-    }
-
-    // Add event listener for WebUI URL changes
-    const webuiInput = clone.querySelector('.instance-webui');
-    const portInput = clone.querySelector('.instance-port');
-    
-    webuiInput.addEventListener('change', function() {
-        try {
-            if (this.value) {
-                const url = new URL(this.value);
-                // Set port based on protocol if not explicitly set in URL
-                if (!url.port) {
-                    if (url.protocol === 'https:') {
-                        portInput.value = '443';
-                    } else if (url.protocol === 'http:') {
-                        portInput.value = '80';
+                data.systems.forEach(system => {
+                    if (system.application_id != appId) {  // Don't show self as dependency
+                        const div = document.createElement('div');
+                        div.className = 'form-check';
+                        div.innerHTML = `
+                            <input class="form-check-input" type="checkbox" 
+                                   value="${system.id}" 
+                                   id="dep_${system.id}"
+                                   ${data.current_dependencies.includes(system.id) ? 'checked' : ''}>
+                            <label class="form-check-label" for="dep_${system.id}">
+                                ${system.name} (${system.team})
+                            </label>
+                        `;
+                        dependenciesList.appendChild(div);
                     }
-                } else {
-                    portInput.value = url.port;
-                }
+                });
+                
+                // Add search functionality
+                const searchInput = document.getElementById('dependencySearch');
+                searchInput.addEventListener('input', function() {
+                    const searchTerm = this.value.toLowerCase();
+                    document.querySelectorAll('#dependenciesList .form-check').forEach(item => {
+                        const text = item.textContent.toLowerCase();
+                        item.style.display = text.includes(searchTerm) ? '' : 'none';
+                    });
+                });
             }
-        } catch (e) {
-            console.error('Invalid URL:', e);
-        }
-    });
-    
-    container.appendChild(clone);
-}
-
-function removeInstance(button) {
-    button.closest('.instance-edit').remove();
-}
-
-function saveApplication() {
-    console.log('Saving application...');
-    const id = document.getElementById('editAppId').value;
-    const instances = [];
-    
-    // Collect instances data
-    document.querySelectorAll('.instance-edit').forEach(inst => {
-        const port = inst.querySelector('.instance-port').value;
-        instances.push({
-            id: inst.querySelector('.instance-id').value || null,
-            host: inst.querySelector('.instance-host').value,
-            port: port ? parseInt(port) : null,
-            webui_url: inst.querySelector('.instance-webui').value,
-            db_host: inst.querySelector('.instance-db').value
         });
-    });
+    
+    const modal = new bootstrap.Modal(document.getElementById('editApplicationModal'));
+    modal.show();
+}
+
+function saveEditApplication() {
+    const appId = document.getElementById('editAppId').value;
+    const name = document.getElementById('editAppName').value;
+    const team = document.getElementById('editAppTeam').value;
     
     // Get selected dependencies
-    const dependencies = Array.from(document.getElementById('editDependencies').selectedOptions)
-        .map(option => parseInt(option.value));
+    const dependencies = Array.from(document.querySelectorAll('#dependenciesList input:checked'))
+        .map(cb => parseInt(cb.value));
     
-    const data = {
-        name: document.getElementById('editAppName').value,
-        team_id: parseInt(document.getElementById('editTeam').value),
-        shutdown_order: parseInt(document.getElementById('editShutdownOrder').value),
-        dependencies: dependencies,
-        instances: instances
-    };
-    
-    console.log('Saving data:', data);
-    
-    fetch(`/update_application/${id}`, {
+    fetch('/update_application', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify(data)
+        body: JSON.stringify({
+            id: appId,
+            name: name,
+            team: team,
+            dependencies: dependencies
+        })
     })
     .then(response => response.json())
     .then(data => {
         if (data.status === 'success') {
-            showAlert('success', data.message);
-            setTimeout(() => {
-                window.location.reload();
-            }, 1000);
+            location.reload();
         } else {
-            showAlert('danger', data.message || 'Failed to update application');
+            showAlert('danger', 'Error: ' + data.message);
         }
     })
     .catch(error => {
-        console.error('Save error:', error);
-        showAlert('danger', 'Failed to update application: ' + error.message);
+        console.error('Error:', error);
+        showAlert('danger', 'Error updating application');
     });
 }
 
@@ -1108,7 +1048,7 @@ function confirmDeleteSelected() {
 </template>
 
 <!-- Edit Modal -->
-<div class="modal fade" id="editModal" tabindex="-1">
+<div class="modal fade" id="editApplicationModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
@@ -1116,95 +1056,33 @@ function confirmDeleteSelected() {
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div id="alertContainer"></div>
-                <form id="editForm">
+                <form id="editApplicationForm">
                     <input type="hidden" id="editAppId">
                     <div class="mb-3">
-                        <label class="form-label">Application Name</label>
+                        <label class="form-label">Name</label>
                         <input type="text" class="form-control" id="editAppName" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Team</label>
-                        <select class="form-select" id="editTeam" required>
-                            {% for team in teams %}
-                            <option value="{{ team.id }}">{{ team.name }}</option>
-                            {% endfor %}
-                        </select>
+                        <input type="text" class="form-control" id="editAppTeam" required>
                     </div>
-                    
                     <div class="mb-3">
-                        <label class="form-label">Shutdown Configuration</label>
-                        <div class="card">
-                            <div class="card-body">
-                                <div class="row g-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label">Shutdown Order</label>
-                                        <input type="number" class="form-control" id="editShutdownOrder" min="0" value="100">
-                                        <small class="text-muted">Lower numbers are shutdown first</small>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Dependencies</label>
-                                        <select class="form-select" id="editDependencies" multiple>
-                                            {% for app in applications %}
-                                            <option value="{{ app.id }}">{{ app.name }}</option>
-                                            {% endfor %}
-                                        </select>
-                                        <small class="text-muted">Select applications that must be shutdown before this one</small>
-                                    </div>
-                                </div>
+                        <label class="form-label">Dependencies</label>
+                        <div class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
+                            <input type="text" class="form-control mb-2" id="dependencySearch" placeholder="Search systems...">
+                            <div id="dependenciesList" class="list-group">
+                                <!-- Dependencies will be populated here -->
                             </div>
                         </div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Instances</label>
-                        <div id="instancesList">
-                            <!-- Instances will be added here dynamically -->
-                        </div>
-                        <button type="button" class="btn btn-outline-primary mt-2" onclick="addInstance()">
-                            <i class="bi bi-plus-circle me-1"></i>Add Instance
-                        </button>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="saveApplication()">Save Changes</button>
+                <button type="button" class="btn btn-primary" onclick="saveEditApplication()">Save Changes</button>
             </div>
         </div>
     </div>
 </div>
-
-<template id="instanceTemplate">
-    <div class="instance-edit card mb-3">
-        <div class="card-body">
-            <div class="d-flex justify-content-between align-items-start mb-3">
-                <h6 class="card-title mb-0">Instance</h6>
-                <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeInstance(this)">
-                    <i class="bi bi-trash"></i>
-                </button>
-            </div>
-            <input type="hidden" class="instance-id">
-            <div class="row g-3">
-                <div class="col-md-6">
-                    <label class="form-label">Host</label>
-                    <input type="text" class="form-control instance-host" required>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Port</label>
-                    <input type="number" class="form-control instance-port">
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">WebUI URL</label>
-                    <input type="url" class="form-control instance-webui">
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Database Host</label>
-                    <input type="text" class="form-control instance-db">
-                </div>
-            </div>
-        </div>
-    </div>
-</template>
 
 {% endblock %}

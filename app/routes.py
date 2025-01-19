@@ -796,3 +796,67 @@ def update_system():
         db.session.rollback()
         main.logger.error(f"Error updating system: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@main.route('/get_all_systems')
+def get_all_systems():
+    try:
+        # Get all instances with their application and team info
+        instances = db.session.query(
+            ApplicationInstance, 
+            Application.name.label('app_name'),
+            Team.name.label('team_name')
+        ).join(
+            Application, ApplicationInstance.application_id == Application.id
+        ).join(
+            Team, Application.team_id == Team.id
+        ).all()
+        
+        # Format the response
+        systems = [{
+            'id': instance.ApplicationInstance.id,
+            'name': instance.ApplicationInstance.host,
+            'team': instance.team_name,
+            'application_id': instance.ApplicationInstance.application_id
+        } for instance in instances]
+        
+        return jsonify({
+            'status': 'success',
+            'systems': systems,
+            'current_dependencies': []  # This will be populated with actual dependencies
+        })
+    except Exception as e:
+        main.logger.error(f"Error getting systems: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@main.route('/update_application', methods=['POST'])
+def update_application():
+    try:
+        data = request.get_json()
+        app_id = data.get('id')
+        new_name = data.get('name')
+        new_team = data.get('team')
+        new_dependencies = data.get('dependencies', [])
+        
+        # Get application
+        application = Application.query.get_or_404(app_id)
+        
+        # Update team if it exists, create if it doesn't
+        team = Team.query.filter_by(name=new_team).first()
+        if not team:
+            team = Team(name=new_team)
+            db.session.add(team)
+            db.session.flush()
+        
+        # Update application
+        application.name = new_name
+        application.team_id = team.id
+        
+        # Update dependencies
+        application.dependencies = new_dependencies
+        
+        db.session.commit()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        db.session.rollback()
+        main.logger.error(f"Error updating application: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
