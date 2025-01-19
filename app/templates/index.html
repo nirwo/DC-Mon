@@ -336,31 +336,26 @@
     </div>
 </div>
 
-<div id="importModal" class="modal">
-    <div class="modal-content">
-        <span class="close">&times;</span>
-        <h2>Import Data</h2>
-        <p>Upload a CSV file with the following columns:</p>
-        <ul>
-            <li>team (required)</li>
-            <li>name (required)</li>
-            <li>host (required)</li>
-            <li>port (optional)</li>
-            <li>webui_url (optional)</li>
-            <li>shutdown order (optional)</li>
-            <li>dependency (optional)</li>
-        </ul>
-        <p>Example:</p>
-        <pre>
-team,name,host,port,webui_url,shutdown order,dependency
-DevOps,DB Server,db-server-1,5432,http://db-server-1:8080,1,
-DevOps,Web Server,web-server-1,80,http://web-server-1,2,DB Server
-DevOps,Load Balancer,lb-1,443,http://lb-1,3,Web Server
-        </pre>
-        <form id="importForm" enctype="multipart/form-data">
-            <input type="file" name="file" accept=".csv,.json" required>
-            <button type="submit">Import</button>
-        </form>
+<div class="modal fade" id="importModal" tabindex="-1" role="dialog" aria-labelledby="importModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="importModalLabel">Import Data</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="importForm" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="file" class="form-label">CSV File</label>
+                        <input type="file" class="form-control" id="file" name="file" accept=".csv" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary">Import</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 
@@ -573,35 +568,41 @@ function deleteSystem(systemId) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    const importModal = new bootstrap.Modal(document.getElementById('importModal'));
-    
-    function handleImport(event) {
-        event.preventDefault();
-        const formData = new FormData(event.target);
-        
-        fetch('/import', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            importModal.hide();
-            if (data.success) {
-                showAlert('success', 'Import successful');
-                setTimeout(() => location.reload(), 1000);
-            } else {
-                showAlert('danger', 'Import failed: ' + data.error);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showAlert('danger', 'Import failed: ' + error.message);
-        });
-    }
-
+    // Import handling
     const importForm = document.getElementById('importForm');
+    const importModalEl = document.getElementById('importModal');
+    let importModal;
+    
+    if (importModalEl) {
+        importModal = new bootstrap.Modal(importModalEl);
+    }
+    
     if (importForm) {
-        importForm.addEventListener('submit', handleImport);
+        importForm.addEventListener('submit', function(event) {
+            event.preventDefault();
+            const formData = new FormData(importForm);
+            
+            fetch('/import', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (importModal) {
+                    importModal.hide();
+                }
+                if (data.success) {
+                    showAlert('success', 'Import successful');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    showAlert('danger', 'Import failed: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showAlert('danger', 'Import failed: ' + error.message);
+            });
+        });
     }
 
     function updateSystemsList(systems) {
