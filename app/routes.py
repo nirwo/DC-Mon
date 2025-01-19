@@ -913,13 +913,28 @@ def list_applications():
         return jsonify({"error": str(e)}), 500
 
 @main.route('/api/teams', methods=['GET'])
-def list_teams():
+def get_teams():
     try:
         db = get_db()
-        teams = [Team.from_dict(team) for team in db.teams.find()]
-        return jsonify([team.to_dict() for team in teams])
+        teams = list(db.teams.find())
+        for team in teams:
+            team['_id'] = str(team['_id'])
+            
+            # Get applications count
+            apps = list(db.applications.find({'team_id': team['_id']}))
+            team['application_count'] = len(apps)
+            
+            # Get systems count
+            systems_count = 0
+            for app in apps:
+                systems = list(db.systems.find({'application_id': str(app['_id'])}))
+                systems_count += len(systems)
+            team['systems_count'] = systems_count
+            
+        return jsonify(teams)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Error getting teams: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/api/teams', methods=['POST'])
 def create_team():
