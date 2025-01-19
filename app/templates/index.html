@@ -337,7 +337,7 @@
 </div>
 
 <div class="modal fade" id="importModal" tabindex="-1" role="dialog" aria-labelledby="importModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="importModalLabel">Import Data</h5>
@@ -346,7 +346,27 @@
             <form id="importForm" enctype="multipart/form-data">
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="file" class="form-label">CSV File</label>
+                        <h6>CSV Structure</h6>
+                        <p>Your CSV file should have the following columns:</p>
+                        <ul>
+                            <li><strong>team</strong> (required): Team name</li>
+                            <li><strong>name</strong> (required): Application name</li>
+                            <li><strong>host</strong> (required): Host address</li>
+                            <li><strong>port</strong> (optional): Port number</li>
+                            <li><strong>webui_url</strong> (optional): Web UI URL</li>
+                            <li><strong>shutdown order</strong> (optional): Order for shutdown (number)</li>
+                            <li><strong>dependency</strong> (optional): Comma-separated list of dependent applications</li>
+                        </ul>
+                        <div class="alert alert-info">
+                            <strong>Example CSV:</strong>
+                            <pre class="mb-0">team,name,host,port,webui_url,shutdown order,dependency
+DevOps,MongoDB,mongodb-server,27017,http://mongodb-server:8080,1,
+DevOps,Web Server,web-server,80,http://web-server,2,MongoDB
+DevOps,Load Balancer,lb-server,443,http://lb-server,3,Web Server</pre>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Select CSV File</label>
                         <input type="file" class="form-control" id="file" name="file" accept=".csv" required>
                     </div>
                 </div>

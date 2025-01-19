@@ -191,28 +191,36 @@ def import_data():
         for row in csv_reader:
             # Get or create team
             team_name = row.get('team', 'Default Team')
-            team = db.teams.find_one({'name': team_name})
-            if not team:
-                team = {'name': team_name}
-                team_id = db.teams.insert_one(team).inserted_id
-            else:
-                team_id = team['_id']
+            team = db.teams.find_one_and_update(
+                {'name': team_name},
+                {'$set': {'name': team_name}},
+                upsert=True,
+                return_document=True
+            )
+            team_id = team['_id']
             
-            # Create application
+            # Get or update application
             app_name = row.get('name')
             if not app_name:
                 continue
                 
-            app = {
+            app_data = {
                 'name': app_name,
                 'team_id': str(team_id),
                 'shutdown_order': int(row.get('shutdown order', 0)) if row.get('shutdown order') else 0,
                 'dependencies': [dep.strip() for dep in row.get('dependency', '').split(',') if dep.strip()]
             }
-            app_id = db.applications.insert_one(app).inserted_id
             
-            # Create system
-            system = {
+            app = db.applications.find_one_and_update(
+                {'name': app_name, 'team_id': str(team_id)},
+                {'$set': app_data},
+                upsert=True,
+                return_document=True
+            )
+            app_id = app['_id']
+            
+            # Get or update system
+            system_data = {
                 'name': app_name,
                 'application_id': str(app_id),
                 'host': row.get('host', ''),
@@ -221,10 +229,16 @@ def import_data():
                 'status': 'unknown',
                 'last_checked': datetime.utcnow()
             }
-            db.systems.insert_one(system)
+            
+            db.systems.find_one_and_update(
+                {'name': app_name, 'application_id': str(app_id)},
+                {'$set': system_data},
+                upsert=True
+            )
         
         return jsonify({'success': True})
     except Exception as e:
+        logger.error(f"Import error: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
 @main.route('/api/import_data', methods=['POST'])
