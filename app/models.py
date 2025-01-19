@@ -23,10 +23,12 @@ class Team:
         )
 
 class System:
-    def __init__(self, name, application_id=None, status="unknown", last_checked=None, _id=None):
+    def __init__(self, name, application_id=None, port=None, webui_url=None, status="unknown", last_checked=None, _id=None):
         self._id = _id if _id else ObjectId()
         self.name = name
         self.application_id = application_id
+        self.port = port
+        self.webui_url = webui_url
         self.status = status
         self.last_checked = last_checked or datetime.utcnow()
     
@@ -35,6 +37,8 @@ class System:
             "_id": self._id,
             "name": self.name,
             "application_id": str(self.application_id) if self.application_id else None,
+            "port": self.port,
+            "webui_url": self.webui_url,
             "status": self.status,
             "last_checked": self.last_checked
         }
@@ -44,6 +48,8 @@ class System:
         return cls(
             name=data["name"],
             application_id=data.get("application_id"),
+            port=data.get("port"),
+            webui_url=data.get("webui_url"),
             status=data.get("status", "unknown"),
             last_checked=data.get("last_checked"),
             _id=data.get("_id")
@@ -52,13 +58,17 @@ class System:
 class Application:
     STATES = ["notStarted", "inProgress", "completed"]
     
-    def __init__(self, name, team_id=None, state="notStarted", enabled=False, systems=None, _id=None):
+    def __init__(self, name, team_id=None, state="notStarted", enabled=True, shutdown_order=0, dependencies=None, systems=None, _id=None):
         self._id = _id if _id else ObjectId()
         self.name = name
         self.team_id = team_id
         self.state = state if state in self.STATES else "notStarted"
         self.enabled = enabled
+        self.shutdown_order = shutdown_order
+        self.dependencies = dependencies or []
         self.systems = systems or []
+        self.created_at = datetime.utcnow()
+        self.updated_at = datetime.utcnow()
     
     def to_dict(self):
         return {
@@ -67,19 +77,28 @@ class Application:
             "team_id": str(self.team_id) if self.team_id else None,
             "state": self.state,
             "enabled": self.enabled,
-            "systems": self.systems
+            "shutdown_order": self.shutdown_order,
+            "dependencies": self.dependencies,
+            "systems": self.systems,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at
         }
     
     @classmethod
     def from_dict(cls, data):
-        return cls(
+        app = cls(
             name=data["name"],
             team_id=data.get("team_id"),
             state=data.get("state", "notStarted"),
-            enabled=data.get("enabled", False),
+            enabled=data.get("enabled", True),
+            shutdown_order=data.get("shutdown_order", 0),
+            dependencies=data.get("dependencies", []),
             systems=data.get("systems", []),
             _id=data.get("_id")
         )
+        app.created_at = data.get("created_at", datetime.utcnow())
+        app.updated_at = data.get("updated_at", datetime.utcnow())
+        return app
 
 class ApplicationInstance:
     def __init__(self, application_id, host, port=None, webui_url=None, db_host=None, _id=None):

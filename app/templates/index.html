@@ -58,6 +58,12 @@
                                         {% for system in app.systems %}
                                         <div class="d-flex justify-content-between align-items-center mt-1">
                                             <span class="small">{{ system.name }}</span>
+                                            {% if system.webui_url %}
+                                            <a href="{{ system.webui_url }}" target="_blank" class="system-url">🔗</a>
+                                            {% endif %}
+                                            {% if system.port %}
+                                            <span class="port-badge">:{{ system.port }}</span>
+                                            {% endif %}
                                             <span class="badge bg-{{ 'success' if system.status == 'running' else 'secondary' }}">
                                                 {{ system.status }}
                                             </span>
@@ -66,6 +72,24 @@
                                         {% endfor %}
                                     </div>
                                     {% endif %}
+                                    <div class="mt-2">
+                                        <small class="text-muted">Sequence:</small>
+                                        <span class="small">{{ app.sequence }}</span>
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted">Shutdown Order:</small>
+                                        <span class="small">{{ app.shutdown_order }}</span>
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted">Dependencies:</small>
+                                        {% if app.dependencies %}
+                                        <ul class="dependencies-list">
+                                            {% for dep in app.dependencies %}
+                                            <li>{{ dep }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                        {% endif %}
+                                    </div>
                                 </div>
                             </div>
                             {% endif %}
@@ -99,6 +123,12 @@
                                         {% for system in app.systems %}
                                         <div class="d-flex justify-content-between align-items-center mt-1">
                                             <span class="small">{{ system.name }}</span>
+                                            {% if system.webui_url %}
+                                            <a href="{{ system.webui_url }}" target="_blank" class="system-url">🔗</a>
+                                            {% endif %}
+                                            {% if system.port %}
+                                            <span class="port-badge">:{{ system.port }}</span>
+                                            {% endif %}
                                             <span class="badge bg-{{ 'success' if system.status == 'running' else 'secondary' }}">
                                                 {{ system.status }}
                                             </span>
@@ -107,6 +137,24 @@
                                         {% endfor %}
                                     </div>
                                     {% endif %}
+                                    <div class="mt-2">
+                                        <small class="text-muted">Sequence:</small>
+                                        <span class="small">{{ app.sequence }}</span>
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted">Shutdown Order:</small>
+                                        <span class="small">{{ app.shutdown_order }}</span>
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted">Dependencies:</small>
+                                        {% if app.dependencies %}
+                                        <ul class="dependencies-list">
+                                            {% for dep in app.dependencies %}
+                                            <li>{{ dep }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                        {% endif %}
+                                    </div>
                                 </div>
                             </div>
                             {% endif %}
@@ -140,6 +188,12 @@
                                         {% for system in app.systems %}
                                         <div class="d-flex justify-content-between align-items-center mt-1">
                                             <span class="small">{{ system.name }}</span>
+                                            {% if system.webui_url %}
+                                            <a href="{{ system.webui_url }}" target="_blank" class="system-url">🔗</a>
+                                            {% endif %}
+                                            {% if system.port %}
+                                            <span class="port-badge">:{{ system.port }}</span>
+                                            {% endif %}
                                             <span class="badge bg-{{ 'success' if system.status == 'running' else 'secondary' }}">
                                                 {{ system.status }}
                                             </span>
@@ -148,6 +202,24 @@
                                         {% endfor %}
                                     </div>
                                     {% endif %}
+                                    <div class="mt-2">
+                                        <small class="text-muted">Sequence:</small>
+                                        <span class="small">{{ app.sequence }}</span>
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted">Shutdown Order:</small>
+                                        <span class="small">{{ app.shutdown_order }}</span>
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted">Dependencies:</small>
+                                        {% if app.dependencies %}
+                                        <ul class="dependencies-list">
+                                            {% for dep in app.dependencies %}
+                                            <li>{{ dep }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                        {% endif %}
+                                    </div>
                                 </div>
                             </div>
                             {% endif %}
@@ -207,6 +279,12 @@
                                                 <small class="text-muted">Application: {{ app.name }}</small>
                                                 <small class="text-muted">Team: {{ app.team.name }}</small>
                                             </div>
+                                            {% if system.webui_url %}
+                                            <a href="{{ system.webui_url }}" target="_blank" class="system-url">🔗</a>
+                                            {% endif %}
+                                            {% if system.port %}
+                                            <span class="port-badge">:{{ system.port }}</span>
+                                            {% endif %}
                                             <span class="badge bg-success">
                                                 {{ system.status }}
                                             </span>
@@ -235,6 +313,12 @@
                                                 <small class="text-muted">Application: {{ app.name }}</small>
                                                 <small class="text-muted">Team: {{ app.team.name }}</small>
                                             </div>
+                                            {% if system.webui_url %}
+                                            <a href="{{ system.webui_url }}" target="_blank" class="system-url">🔗</a>
+                                            {% endif %}
+                                            {% if system.port %}
+                                            <span class="port-badge">:{{ system.port }}</span>
+                                            {% endif %}
                                             <span class="badge bg-secondary">
                                                 {{ system.status }}
                                             </span>
@@ -252,37 +336,142 @@
     </div>
 </div>
 
-<div class="modal fade" id="importModal" tabindex="-1" aria-labelledby="importModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="importModalLabel">Import Data</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="importForm">
-                    <div class="mb-3">
-                        <label for="importFile" class="form-label">Choose File (JSON or CSV)</label>
-                        <input type="file" class="form-control" id="importFile" accept=".json,.csv" required>
-                    </div>
-                    <div class="alert alert-info">
-                        <h6>CSV Format:</h6>
-                        <p>Required columns: team, name, host</p>
-                        <p>Example:</p>
-                        <pre>team,name,host
-DevOps,Web Server,web-server-1
-DevOps,Web Server,web-server-2
-Infrastructure,Database,db-primary</pre>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="importData()">Import</button>
-            </div>
+<div id="importModal" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>Import Data</h2>
+        <p>Upload a CSV file with the following columns:</p>
+        <ul>
+            <li>team (required)</li>
+            <li>name (required)</li>
+            <li>host (required)</li>
+            <li>port (optional)</li>
+            <li>webui_url (optional)</li>
+            <li>shutdown order (optional)</li>
+            <li>dependency (optional)</li>
+        </ul>
+        <p>Example:</p>
+        <pre>
+team,name,host,port,webui_url,shutdown order,dependency
+DevOps,DB Server,db-server-1,5432,http://db-server-1:8080,1,
+DevOps,Web Server,web-server-1,80,http://web-server-1,2,DB Server
+DevOps,Load Balancer,lb-1,443,http://lb-1,3,Web Server
+        </pre>
+        <form id="importForm" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".csv,.json" required>
+            <button type="submit">Import</button>
+        </form>
+    </div>
+</div>
+
+<div class="tab-pane fade" id="applications-table" role="tabpanel">
+    <div class="row mt-3">
+        <div class="col">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Application</th>
+                        <th>Team</th>
+                        <th>State</th>
+                        <th>Shutdown Order</th>
+                        <th>Dependencies</th>
+                        <th>Systems</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for app in applications %}
+                    <tr>
+                        <td>{{ app.name }}</td>
+                        <td>{{ app.team.name }}</td>
+                        <td>
+                            <select class="state-select" data-app-id="{{ app._id }}" onchange="updateApplicationState('{{ app._id }}', this.value)">
+                                <option value="notStarted" {% if app.state == 'notStarted' %}selected{% endif %}>Not Started</option>
+                                <option value="inProgress" {% if app.state == 'inProgress' %}selected{% endif %}>In Progress</option>
+                                <option value="completed" {% if app.state == 'completed' %}selected{% endif %}>Completed</option>
+                            </select>
+                        </td>
+                        <td>{{ app.shutdown_order }}</td>
+                        <td>
+                            {% if app.dependencies %}
+                            <ul class="dependencies-list">
+                                {% for dep in app.dependencies %}
+                                <li>{{ dep }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <ul class="systems-list">
+                                {% for system in app.systems %}
+                                <li>
+                                    {{ system.name }}
+                                    {% if system.webui_url %}
+                                    <a href="{{ system.webui_url }}" target="_blank" class="system-url">🔗</a>
+                                    {% endif %}
+                                    {% if system.port %}
+                                    <span class="port-badge">:{{ system.port }}</span>
+                                    {% endif %}
+                                    <span class="status-dot status-{{ system.status }}"></span>
+                                    <button onclick="deleteSystem('{{ system.id }}')" class="delete-btn">Delete</button>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </td>
+                        <td>
+                            <div class="btn-group">
+                                <button onclick="toggleApplication('{{ app._id }}', {{ 'false' if app.enabled else 'true' }})" class="toggle-btn {{ 'enabled' if app.enabled else 'disabled' }}">
+                                    {{ 'Disable' if app.enabled else 'Enable' }}
+                                </button>
+                                <button onclick="deleteApplication('{{ app._id }}')" class="delete-btn">Delete</button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
+
+<style>
+.status-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-left: 5px;
+}
+.status-running { background-color: #4CAF50; }
+.status-stopped { background-color: #f44336; }
+.status-unknown { background-color: #9e9e9e; }
+
+.system-url {
+    text-decoration: none;
+    margin-left: 5px;
+}
+
+.port-badge {
+    background-color: #e0e0e0;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    margin-left: 5px;
+}
+
+.systems-list, .dependencies-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.systems-list li, .dependencies-list li {
+    margin: 5px 0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+</style>
 
 {% endblock %}
 
@@ -426,6 +615,12 @@ function updateSystemsDisplay() {
                                     <h6 class="mb-1">${system.name}</h6>
                                     <small class="text-muted">Last checked: ${new Date(system.last_checked).toLocaleString()}</small>
                                 </div>
+                                {% if system.webui_url %}
+                                <a href="${system.webui_url}" target="_blank" class="system-url">🔗</a>
+                                {% endif %}
+                                {% if system.port %}
+                                <span class="port-badge">:${system.port}</span>
+                                {% endif %}
                                 <span class="badge bg-${system.status === 'running' ? 'success' : 'secondary'}">
                                     ${system.status}
                                 </span>
