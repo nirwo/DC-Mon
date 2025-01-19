@@ -4,9 +4,15 @@
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>Applications</h1>
-        <button class="btn btn-primary" onclick="createApplication()">
-            <i class="bi bi-plus-circle me-1"></i>Add Application
-        </button>
+        <div class="d-flex gap-2">
+            <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" class="form-control" id="searchInput" placeholder="Search applications or systems...">
+            </div>
+            <button class="btn btn-primary" onclick="createApplication()">
+                <i class="bi bi-plus-circle me-1"></i>Add Application
+            </button>
+        </div>
     </div>
 
     <ul class="nav nav-tabs mb-3" id="appTabs" role="tablist">
@@ -653,6 +659,46 @@ document.addEventListener('DOMContentLoaded', function() {
         return new bootstrap.Tooltip(tooltipTriggerEl)
     });
     
+    // Initialize search functionality
+    const searchInput = document.getElementById('searchInput');
+    searchInput.addEventListener('input', function(e) {
+        const searchTerm = e.target.value.toLowerCase();
+        const applications = document.querySelectorAll('tr[data-app-id]');
+        
+        applications.forEach(appRow => {
+            const appId = appRow.dataset.appId;
+            const instancesRow = document.querySelector(`.instances-row[data-parent-id="${appId}"]`);
+            const appName = appRow.querySelector('td:first-child').textContent.toLowerCase();
+            const teamName = appRow.querySelector('td:nth-child(2)').textContent.toLowerCase();
+            
+            let show = false;
+            
+            // Search in app name and team
+            if (appName.includes(searchTerm) || teamName.includes(searchTerm)) {
+                show = true;
+            }
+            
+            // Search in instances if expanded
+            if (instancesRow) {
+                const instances = instancesRow.querySelectorAll('tr[data-instance-id]');
+                instances.forEach(instance => {
+                    const host = instance.querySelector('td:first-child').textContent.toLowerCase();
+                    if (host.includes(searchTerm)) {
+                        show = true;
+                    }
+                });
+            }
+            
+            if (show) {
+                appRow.style.display = '';
+                if (instancesRow) instancesRow.style.display = '';
+            } else {
+                appRow.style.display = 'none';
+                if (instancesRow) instancesRow.style.display = 'none';
+            }
+        });
+    });
+    
     // Check status of visible instances every 30 seconds
     setInterval(() => {
         const visibleInstances = document.querySelectorAll('.instances-row:not(.d-none) [data-instance-id]');
@@ -661,6 +707,27 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }, 30000);
 });
+
+function toggleInstances(appId) {
+    const row = document.querySelector(`tr[data-app-id="${appId}"]`);
+    const instancesRow = document.querySelector(`.instances-row[data-parent-id="${appId}"]`);
+    const chevron = row.querySelector('.toggle-instances i');
+    
+    if (!instancesRow) return;
+    
+    instancesRow.classList.toggle('d-none');
+    chevron.classList.toggle('bi-chevron-right');
+    chevron.classList.toggle('bi-chevron-down');
+    
+    if (!instancesRow.classList.contains('d-none')) {
+        // Check status when expanding
+        const instances = instancesRow.querySelectorAll('[data-instance-id]');
+        instances.forEach(instance => {
+            const instanceId = instance.dataset.instanceId;
+            checkInstanceStatus(instanceId);
+        });
+    }
+}
 
 </script>
 
