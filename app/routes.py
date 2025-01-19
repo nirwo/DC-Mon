@@ -655,30 +655,27 @@ def delete_team(team_id):
 def update_application_state(app_id):
     db = get_db()
     data = request.get_json()
-    state = data.get('state')
+    new_state = data.get('state')
     
-    if state not in ['notStarted', 'inProgress', 'completed']:
-        return jsonify({'error': 'Invalid state'}), 400
-        
     try:
-        db.applications.update_one(
+        if new_state not in ['notStarted', 'inProgress', 'completed']:
+            return jsonify({'error': 'Invalid state'}), 400
+            
+        # Update application state
+        result = db.applications.update_one(
             {'_id': ObjectId(app_id)},
-            {'$set': {'state': state}}
+            {'$set': {
+                'state': new_state,
+                'updated_at': datetime.utcnow()
+            }}
         )
+        
+        if result.modified_count == 0:
+            return jsonify({'error': 'Application not found'}), 404
+            
         return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-@main.route('/api/applications/states')
-def get_application_states():
-    db = get_db()
-    applications = []
-    for app in db.applications.find():
-        applications.append({
-            '_id': str(app['_id']),
-            'state': app.get('state', 'notStarted')
-        })
-    return jsonify(applications)
 
 @main.route('/api/applications/<app_id>/toggle', methods=['POST'])
 def toggle_application(app_id):
@@ -688,10 +685,16 @@ def toggle_application(app_id):
     
     try:
         # Update application
-        db.applications.update_one(
+        result = db.applications.update_one(
             {'_id': ObjectId(app_id)},
-            {'$set': {'enabled': enabled}}
+            {'$set': {
+                'enabled': enabled,
+                'updated_at': datetime.utcnow()
+            }}
         )
+        
+        if result.modified_count == 0:
+            return jsonify({'error': 'Application not found'}), 404
         
         # Update all associated systems
         status = 'running' if enabled else 'stopped'
@@ -707,32 +710,16 @@ def toggle_application(app_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@main.route('/api/applications/<app_id>/status')
-def get_application_status(app_id):
+@main.route('/api/applications/states')
+def get_application_states():
     db = get_db()
-    try:
-        app = db.applications.find_one({'_id': ObjectId(app_id)})
-        if not app:
-            return jsonify({'error': 'Application not found'}), 404
-            
-        enabled = app.get('enabled', False)
-        systems = []
-        
-        # Get associated systems
-        for system in db.systems.find({'application_id': str(app_id)}):
-            systems.append({
-                'id': str(system['_id']),
-                'name': system['name'],
-                'status': system.get('status', 'unknown'),
-                'last_checked': system.get('last_checked')
-            })
-        
-        return jsonify({
-            'status': 'running' if enabled else 'stopped',
-            'systems': systems
+    applications = []
+    for app in db.applications.find():
+        applications.append({
+            '_id': str(app['_id']),
+            'state': app.get('state', 'notStarted')
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    return jsonify(applications)
 
 @main.route('/api/applications/<app_id>/run-tests', methods=['POST'])
 def run_application_tests(app_id):

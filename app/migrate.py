@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from database import get_db
-from models import Team, Application
+from models import Team, Application, System
 from bson import ObjectId
 
 logging.basicConfig(level=logging.INFO)
@@ -47,13 +47,15 @@ def init_db():
                 "name": "Web Server",
                 "team_id": ObjectId(team_ids["Infrastructure"]),
                 "state": "notStarted",
-                "enabled": False
+                "enabled": False,
+                "systems": []
             },
             {
                 "name": "Database",
                 "team_id": ObjectId(team_ids["DevOps"]),
                 "state": "notStarted",
-                "enabled": False
+                "enabled": False,
+                "systems": []
             }
         ]
         
@@ -70,32 +72,40 @@ def init_db():
             {
                 "name": "Web Server 1",
                 "application_id": str(app_ids["Web Server"]),
-                "status": "unknown",
+                "status": "stopped",
                 "last_checked": datetime.utcnow()
             },
             {
                 "name": "Web Server 2",
                 "application_id": str(app_ids["Web Server"]),
-                "status": "unknown",
+                "status": "stopped",
                 "last_checked": datetime.utcnow()
             },
             {
                 "name": "Database Primary",
                 "application_id": str(app_ids["Database"]),
-                "status": "unknown",
+                "status": "stopped",
                 "last_checked": datetime.utcnow()
             },
             {
                 "name": "Database Secondary",
                 "application_id": str(app_ids["Database"]),
-                "status": "unknown",
+                "status": "stopped",
                 "last_checked": datetime.utcnow()
             }
         ]
         
         for system_data in systems:
-            result = db.systems.insert_one(system_data)
-            logger.info(f"Added system: {system_data['name']}")
+            system = System(**system_data)
+            result = db.systems.insert_one(system.to_dict())
+            
+            # Add system to application's systems list
+            db.applications.update_one(
+                {"_id": ObjectId(system.application_id)},
+                {"$push": {"systems": str(result.inserted_id)}}
+            )
+            
+            logger.info(f"Added system: {system.name}")
         
         logger.info("Database initialization completed successfully")
         
