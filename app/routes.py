@@ -687,10 +687,22 @@ def toggle_application(app_id):
     enabled = data.get('enabled', False)
     
     try:
+        # Update application
         db.applications.update_one(
             {'_id': ObjectId(app_id)},
             {'$set': {'enabled': enabled}}
         )
+        
+        # Update all associated systems
+        status = 'running' if enabled else 'stopped'
+        db.systems.update_many(
+            {'application_id': str(app_id)},
+            {'$set': {
+                'status': status,
+                'last_checked': datetime.utcnow()
+            }}
+        )
+        
         return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -760,11 +772,12 @@ def get_systems():
     systems = []
     try:
         for system in db.systems.find():
+            app = db.applications.find_one({'_id': ObjectId(system['application_id'])})
             systems.append({
                 'id': str(system['_id']),
                 'name': system['name'],
-                'status': system.get('status', 'unknown'),
-                'last_checked': system.get('last_checked'),
+                'status': 'running' if app and app.get('enabled', False) else 'stopped',
+                'last_checked': system.get('last_checked', datetime.utcnow()),
                 'application_id': str(system['application_id'])
             })
         return jsonify(systems)

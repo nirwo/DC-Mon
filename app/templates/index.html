@@ -29,6 +29,9 @@
         <li class="nav-item">
             <a class="nav-link" id="teams-tab" data-bs-toggle="tab" href="#teams" role="tab">Teams</a>
         </li>
+        <li class="nav-item">
+            <a class="nav-link" id="systems-tab" data-bs-toggle="tab" href="#systems" role="tab">Systems</a>
+        </li>
     </ul>
 
     <div class="tab-content">
@@ -36,9 +39,12 @@
             <div class="row mb-4">
                 <div class="col-md-4">
                     <div class="card">
-                        <div class="card-header">Not Started</div>
+                        <div class="card-header bg-light">
+                            <h5 class="mb-0">Not Started</h5>
+                        </div>
                         <div class="card-body" id="notStartedList" ondrop="drop(event)" ondragover="allowDrop(event)">
-                            {% for app in applications if app.state == 'notStarted' %}
+                            {% for app in applications %}
+                            {% if app.state == 'notStarted' %}
                             <div class="card mb-2 application-card" id="app-{{ app._id }}" draggable="true" ondragstart="drag(event)">
                                 <div class="card-body">
                                     <div class="d-flex justify-content-between align-items-center">
@@ -65,15 +71,19 @@
                                     {% endif %}
                                 </div>
                             </div>
+                            {% endif %}
                             {% endfor %}
                         </div>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="card">
-                        <div class="card-header">In Progress</div>
+                        <div class="card-header bg-light">
+                            <h5 class="mb-0">In Progress</h5>
+                        </div>
                         <div class="card-body" id="inProgressList" ondrop="drop(event)" ondragover="allowDrop(event)">
-                            {% for app in applications if app.state == 'inProgress' %}
+                            {% for app in applications %}
+                            {% if app.state == 'inProgress' %}
                             <div class="card mb-2 application-card" id="app-{{ app._id }}" draggable="true" ondragstart="drag(event)">
                                 <div class="card-body">
                                     <div class="d-flex justify-content-between align-items-center">
@@ -100,15 +110,19 @@
                                     {% endif %}
                                 </div>
                             </div>
+                            {% endif %}
                             {% endfor %}
                         </div>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="card">
-                        <div class="card-header">Completed</div>
+                        <div class="card-header bg-light">
+                            <h5 class="mb-0">Completed</h5>
+                        </div>
                         <div class="card-body" id="completedList" ondrop="drop(event)" ondragover="allowDrop(event)">
-                            {% for app in applications if app.state == 'completed' %}
+                            {% for app in applications %}
+                            {% if app.state == 'completed' %}
                             <div class="card mb-2 application-card" id="app-{{ app._id }}" draggable="true" ondragstart="drag(event)">
                                 <div class="card-body">
                                     <div class="d-flex justify-content-between align-items-center">
@@ -135,6 +149,7 @@
                                     {% endif %}
                                 </div>
                             </div>
+                            {% endif %}
                             {% endfor %}
                         </div>
                     </div>
@@ -161,9 +176,37 @@
                 {% endfor %}
             </div>
         </div>
+
+        <div class="tab-pane fade" id="systems" role="tabpanel">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Running Systems</h5>
+                        </div>
+                        <div class="card-body" id="runningSystems">
+                            <div class="list-group" id="runningSystemsList">
+                                <!-- Systems will be loaded dynamically -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Stopped Systems</h5>
+                        </div>
+                        <div class="card-body" id="stoppedSystems">
+                            <div class="list-group" id="stoppedSystemsList">
+                                <!-- Systems will be loaded dynamically -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
-
 {% endblock %}
 
 {% block scripts %}
@@ -244,22 +287,54 @@ function importCSV() {
     });
 }
 
-// Check system status periodically
-function updateSystemStatus() {
+// Update systems display
+function updateSystemsDisplay() {
     fetch('/api/systems')
         .then(response => response.json())
         .then(systems => {
-            systems.forEach(system => {
-                const statusElement = document.querySelector(`[data-system-id="${system.id}"] .system-status`);
-                if (statusElement) {
-                    statusElement.className = `badge bg-${system.status === 'running' ? 'success' : 'secondary'} system-status`;
-                    statusElement.textContent = system.status;
-                }
-            });
+            const runningList = document.getElementById('runningSystemsList');
+            const stoppedList = document.getElementById('stoppedSystemsList');
+            
+            if (runningList && stoppedList) {
+                runningList.innerHTML = '';
+                stoppedList.innerHTML = '';
+                
+                systems.forEach(system => {
+                    const systemHtml = `
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">${system.name}</h6>
+                                    <small class="text-muted">Last checked: ${new Date(system.last_checked).toLocaleString()}</small>
+                                </div>
+                                <span class="badge bg-${system.status === 'running' ? 'success' : 'secondary'}">
+                                    ${system.status}
+                                </span>
+                            </div>
+                        </div>
+                    `;
+                    
+                    if (system.status === 'running') {
+                        runningList.insertAdjacentHTML('beforeend', systemHtml);
+                    } else {
+                        stoppedList.insertAdjacentHTML('beforeend', systemHtml);
+                    }
+                });
+            }
         });
 }
 
-setInterval(updateSystemStatus, 30000);
-updateSystemStatus();
+// Update systems status every 30 seconds
+setInterval(updateSystemsDisplay, 30000);
+
+// Initial systems update
+document.addEventListener('DOMContentLoaded', function() {
+    updateSystemsDisplay();
+    
+    // Update systems when switching to systems tab
+    document.querySelector('a[href="#systems"]').addEventListener('shown.bs.tab', function (e) {
+        updateSystemsDisplay();
+    });
+});
 </script>
 {% endblock %}

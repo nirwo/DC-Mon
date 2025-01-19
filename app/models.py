@@ -3,67 +3,83 @@ from bson import ObjectId
 
 class Team:
     def __init__(self, name, description=None, _id=None):
-        self._id = ObjectId(_id) if _id else ObjectId()
+        self._id = _id if _id else ObjectId()
         self.name = name
-        self.description = description
+        self.description = description or f"{name} Team"
         
+    def to_dict(self):
+        return {
+            "_id": self._id,
+            "name": self.name,
+            "description": self.description
+        }
+    
     @classmethod
     def from_dict(cls, data):
-        if not data:
-            return None
         return cls(
             name=data["name"],
             description=data.get("description"),
             _id=data.get("_id")
         )
 
+class System:
+    def __init__(self, name, application_id=None, status="unknown", last_checked=None, _id=None):
+        self._id = _id if _id else ObjectId()
+        self.name = name
+        self.application_id = application_id
+        self.status = status
+        self.last_checked = last_checked or datetime.utcnow()
+    
     def to_dict(self):
         return {
-            "_id": str(self._id),
+            "_id": self._id,
             "name": self.name,
-            "description": self.description
+            "application_id": str(self.application_id) if self.application_id else None,
+            "status": self.status,
+            "last_checked": self.last_checked
         }
-
-    def __repr__(self):
-        return f'<Team {self.name}>'
-
-class Application:
-    def __init__(self, name, team_id=None, state="notStarted", enabled=False, _id=None):
-        self._id = ObjectId(_id) if _id else ObjectId()
-        self.name = name
-        self.team_id = ObjectId(team_id) if team_id else None
-        self.state = state
-        self.enabled = enabled
-        self.created_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
-
+    
     @classmethod
     def from_dict(cls, data):
-        if not data:
-            return None
-        app = cls(
+        return cls(
             name=data["name"],
-            team_id=data.get("team_id"),
-            state=data.get("state", "notStarted"),
-            enabled=data.get("enabled", False),
+            application_id=data.get("application_id"),
+            status=data.get("status", "unknown"),
+            last_checked=data.get("last_checked"),
             _id=data.get("_id")
         )
-        if 'created_at' in data:
-            app.created_at = data['created_at']
-        if 'updated_at' in data:
-            app.updated_at = data['updated_at']
-        return app
 
+class Application:
+    STATES = ["notStarted", "inProgress", "completed"]
+    
+    def __init__(self, name, team_id=None, state="notStarted", enabled=False, systems=None, _id=None):
+        self._id = _id if _id else ObjectId()
+        self.name = name
+        self.team_id = team_id
+        self.state = state if state in self.STATES else "notStarted"
+        self.enabled = enabled
+        self.systems = systems or []
+    
     def to_dict(self):
         return {
-            "_id": str(self._id),
+            "_id": self._id,
             "name": self.name,
             "team_id": str(self.team_id) if self.team_id else None,
             "state": self.state,
             "enabled": self.enabled,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at
+            "systems": self.systems
         }
+    
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            name=data["name"],
+            team_id=data.get("team_id"),
+            state=data.get("state", "notStarted"),
+            enabled=data.get("enabled", False),
+            systems=data.get("systems", []),
+            _id=data.get("_id")
+        )
 
 class ApplicationInstance:
     def __init__(self, application_id, host, port=None, webui_url=None, db_host=None, _id=None):
