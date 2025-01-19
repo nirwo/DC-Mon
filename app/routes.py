@@ -462,8 +462,10 @@ def create_application():
             team_id=data.get('team_id')
         )
         
-        result = db.applications.insert_one(app.to_dict())
-        app._id = result.inserted_id
+        app_dict = app.to_dict()
+        app_dict['_id'] = ObjectId()  # Explicitly set ObjectId
+        
+        result = db.applications.insert_one(app_dict)
         
         # Create instance if host is provided
         if 'host' in data:
@@ -492,7 +494,7 @@ def add_instance(app_id):
             return jsonify({"error": "Application not found"}), 404
         
         instance = ApplicationInstance(
-            application_id=app_id,
+            application_id=str(app['_id']),  # Convert ObjectId to string
             host=data['host'],
             port=data.get('port'),
             webui_url=data.get('webui_url'),
