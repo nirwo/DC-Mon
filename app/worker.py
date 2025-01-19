@@ -3,7 +3,8 @@ import time
 from datetime import datetime
 from threading import Thread
 from flask import current_app
-from app import db, create_app
+from app import create_app
+from app.database import get_db
 from app.models import Application, ApplicationInstance
 
 def check_status(host, port):
@@ -23,65 +24,68 @@ def background_status_check(app):
     """Background task to check all application statuses"""
     with app.app_context():
         try:
-            # Get all applications IDs first
-            app_ids = db.session.query(Application.id).all()
-            db.session.remove()  # Close this session
+            db = get_db()
+            
+            # Get all applications
+            applications = list(db.applications.find())
             
             # Process in smaller batches
             batch_size = 5
-            for i in range(0, len(app_ids), batch_size):
-                batch_ids = app_ids[i:i+batch_size]
+            for i in range(0, len(applications), batch_size):
+                batch = applications[i:i+batch_size]
                 
-                # Create new session for each batch
-                with app.app_context():
-                    for app_id in batch_ids:
-                        app_instance = Application.query.get(app_id[0])
-                        if not app_instance:
-                            continue
-                            
-                        down_count = 0
-                        total_instances = len(app_instance.instances)
-                        
-                        for instance in app_instance.instances:
-                            is_up, error = check_status(instance.host, instance.port)
-                            instance.status = 'UP' if is_up else 'DOWN'
-                            instance.error_message = None if is_up else error
-                            if not is_up:
-                                down_count += 1
-                            instance.last_checked = datetime.utcnow()
-                        
-                        app_instance.status = 'UP' if down_count == 0 else f'DOWN ({down_count}/{total_instances})'
-                        app_instance.last_checked = datetime.utcnow()
+                for app_data in batch:
+                    # Get all instances for this application
+                    instances = list(db.instances.find({'application_id': app_data['_id']}))
+                    total_instances = len(instances)
+                    down_count = 0
                     
-                    try:
-                        db.session.commit()
-                    except:
-                        db.session.rollback()
-                        raise
-                    finally:
-                        db.session.remove()
-                
-                time.sleep(0.2)  # Increased delay between batches
+                    for instance_data in instances:
+                        is_up, error = check_status(instance_data['host'], instance_data.get('port'))
+                        
+                        # Update instance status
+                        db.instances.update_one(
+                            {'_id': instance_data['_id']},
+                            {
+                                '$set': {
+                                    'status': 'UP' if is_up else 'DOWN',
+                                    'error_message': None if is_up else error,
+                                    'last_checked': datetime.utcnow()
+                                }
+                            }
+                        )
+                        
+                        if not is_up:
+                            down_count += 1
+                    
+                    # Update application status
+                    app_status = 'UP' if down_count == 0 else 'PARTIAL' if down_count < total_instances else 'DOWN'
+                    db.applications.update_one(
+                        {'_id': app_data['_id']},
+                        {'$set': {'status': app_status}}
+                    )
+                    
+                # Sleep between batches to reduce load
+                time.sleep(1)
                 
         except Exception as e:
-            current_app.logger.error(f"Background status check error: {str(e)}")
-            db.session.rollback()
+            current_app.logger.error(f"Error in background status check: {str(e)}")
         finally:
-            db.session.remove()
+            # Sleep before next round
+            time.sleep(60)
 
 def start_background_checker():
     """Start the background status checker thread"""
     app = create_app()
     
     def run_checker():
-        with app.app_context():
-            while True:
-                try:
-                    background_status_check(app)
-                except Exception as e:
-                    current_app.logger.error(f"Checker thread error: {str(e)}")
-                time.sleep(3600)  # Check every hour
+        while True:
+            try:
+                background_status_check(app)
+            except Exception as e:
+                current_app.logger.error(f"Background checker error: {str(e)}")
+                time.sleep(60)  # Sleep on error before retrying
     
-    checker_thread = Thread(target=run_checker, daemon=True)
-    checker_thread.start()
-    return checker_thread
+    thread = Thread(target=run_checker, daemon=True)
+    thread.start()
+    return thread
