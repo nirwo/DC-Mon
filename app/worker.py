@@ -68,23 +68,23 @@ def background_status_check(app):
                 time.sleep(1)
                 
         except Exception as e:
-            current_app.logger.error(f"Error in background status check: {str(e)}")
+            app.logger.error(f"Error in background status check: {str(e)}")
         finally:
             # Sleep before next round
             time.sleep(60)
 
-def run_checker():
+def run_checker(app):
     while True:
-        with current_app.app_context():
+        with app.app_context():
             try:
-                background_status_check(current_app._get_current_object())
+                background_status_check(app)
             except Exception as e:
-                current_app.logger.error(f"Background checker error: {str(e)}")
+                app.logger.error(f"Background checker error: {str(e)}")
                 time.sleep(60)  # Sleep on error before retrying
 
-def start_background_checker():
+def start_background_checker(app):
     """Start the background checker thread."""
-    checker_thread = Thread(target=run_checker)
+    checker_thread = Thread(target=run_checker, args=(app,))
     checker_thread.daemon = True
     checker_thread.start()
     return checker_thread

@@ -1,28 +1,24 @@
 import os
 from flask import Flask
+from flask_cors import CORS
 from config import Config
-from app.database import get_db
+from app.database import init_db
+from app.routes import main as main_bp
+from app.worker import start_background_checker
 
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
-    
-    from app.routes import main as main_bp
-    app.register_blueprint(main_bp)
+    CORS(app)
     
     # Initialize MongoDB connection
-    with app.app_context():
-        try:
-            db = get_db()
-            # Test MongoDB connection
-            db.command('ping')
-            app.logger.info("Successfully connected to MongoDB")
-        except Exception as e:
-            app.logger.error(f"Database initialization error: {e}")
-            
-        # Start background worker for status checks
-        if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
-            from app.worker import start_background_checker
-            start_background_checker()
+    init_db()
+    
+    # Register blueprints
+    app.register_blueprint(main_bp)
+    
+    # Start background checker
+    if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        start_background_checker(app)
             
     return app
