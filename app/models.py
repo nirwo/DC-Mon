@@ -21,34 +21,37 @@ class Team:
         return f'<Team {self.name}>'
 
 class Application:
-    def __init__(self, name, team_id, shutdown_order=None, dependencies=None):
+    def __init__(self, name, host=None, port=None, team_id=None, _id=None):
+        self._id = _id
         self.name = name
+        self.host = host
+        self.port = port
         self.team_id = team_id
-        self.shutdown_order = shutdown_order
-        self.dependencies = dependencies or []
-        
-    @staticmethod
-    def from_dict(data):
-        app = Application(
-            data['name'],
-            data['team_id'],
-            data.get('shutdown_order'),
-            data.get('dependencies', [])
+        self.created_at = datetime.utcnow()
+        self.updated_at = datetime.utcnow()
+
+    @classmethod
+    def from_dict(cls, data):
+        if not data:
+            return None
+        return cls(
+            _id=data.get('_id'),
+            name=data.get('name'),
+            host=data.get('host'),
+            port=data.get('port'),
+            team_id=data.get('team_id')
         )
-        app._id = data.get('_id', ObjectId())
-        return app
-        
+
     def to_dict(self):
         return {
-            '_id': self._id,
+            '_id': str(self._id) if self._id else None,
             'name': self.name,
-            'team_id': self.team_id,
-            'shutdown_order': self.shutdown_order,
-            'dependencies': self.dependencies
+            'host': self.host,
+            'port': self.port,
+            'team_id': str(self.team_id) if self.team_id else None,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at
         }
-
-    def __repr__(self):
-        return f'<Application {self.name}>'
 
 class ApplicationInstance:
     def __init__(self, application_id, host, port=None, webui_url=None, db_host=None):

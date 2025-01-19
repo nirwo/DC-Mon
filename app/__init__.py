@@ -11,14 +11,15 @@ def create_app(config_class=Config):
     app.config.from_object(config_class)
     CORS(app)
     
-    # Initialize MongoDB connection
-    init_db()
-    
     # Register blueprints
     app.register_blueprint(main_bp)
     
-    # Start background checker
-    if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
-        start_background_checker(app)
+    with app.app_context():
+        # Initialize MongoDB connection
+        init_db()
+        
+        # Start background checker
+        if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+            start_background_checker(app)
             
     return app

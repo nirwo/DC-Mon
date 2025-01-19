@@ -450,3 +450,43 @@ def update_application():
     except Exception as e:
         logger.error(f"Error in update_application: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@main.route('/api/applications', methods=['POST'])
+def create_application():
+    try:
+        data = request.get_json()
+        db = get_db()
+        
+        app = Application(
+            name=data['name'],
+            host=data['host'],
+            port=data.get('port'),
+            team_id=data.get('team_id')
+        )
+        
+        result = db.applications.insert_one(app.to_dict())
+        app._id = result.inserted_id
+        
+        return jsonify({"message": "Application created successfully", "id": str(result.inserted_id)}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@main.route('/api/applications', methods=['GET'])
+def list_applications():
+    try:
+        db = get_db()
+        applications = [Application.from_dict(app) for app in db.applications.find()]
+        return jsonify([app.to_dict() for app in applications])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@main.route('/api/applications/<app_id>', methods=['GET'])
+def get_application(app_id):
+    try:
+        db = get_db()
+        app = db.applications.find_one({"_id": ObjectId(app_id)})
+        if app:
+            return jsonify(Application.from_dict(app).to_dict())
+        return jsonify({"error": "Application not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
