@@ -1,5 +1,11 @@
 {% extends "base.html" %}
 
+{% block head %}
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css">
+    <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
+{% endblock %}
+
 {% block content %}
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -30,8 +36,12 @@
 
     <div class="tab-content" id="appTabsContent">
         <div class="tab-pane fade show active" id="active" role="tabpanel">
+            <div class="input-group mb-3">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" class="form-control" id="activeSearchInput" placeholder="Search by name, team, or status...">
+            </div>
             <div class="table-responsive">
-                <table class="table table-hover">
+                <table class="table table-hover" id="activeTable">
                     <thead>
                         <tr>
                             <th>Name</th>
@@ -138,8 +148,12 @@
         </div>
         
         <div class="tab-pane fade" id="completed" role="tabpanel">
+            <div class="input-group mb-3">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" class="form-control" id="completedSearchInput" placeholder="Search by name, team, or completion date...">
+            </div>
             <div class="table-responsive">
-                <table class="table table-hover">
+                <table class="table table-hover" id="completedTable">
                     <thead>
                         <tr>
                             <th>Name</th>
@@ -659,44 +673,37 @@ document.addEventListener('DOMContentLoaded', function() {
         return new bootstrap.Tooltip(tooltipTriggerEl)
     });
     
-    // Initialize search functionality
-    const searchInput = document.getElementById('searchInput');
-    searchInput.addEventListener('input', function(e) {
-        const searchTerm = e.target.value.toLowerCase();
-        const applications = document.querySelectorAll('tr[data-app-id]');
-        
-        applications.forEach(appRow => {
-            const appId = appRow.dataset.appId;
-            const instancesRow = document.querySelector(`.instances-row[data-parent-id="${appId}"]`);
-            const appName = appRow.querySelector('td:first-child').textContent.toLowerCase();
-            const teamName = appRow.querySelector('td:nth-child(2)').textContent.toLowerCase();
-            
-            let show = false;
-            
-            // Search in app name and team
-            if (appName.includes(searchTerm) || teamName.includes(searchTerm)) {
-                show = true;
-            }
-            
-            // Search in instances if expanded
-            if (instancesRow) {
-                const instances = instancesRow.querySelectorAll('tr[data-instance-id]');
-                instances.forEach(instance => {
-                    const host = instance.querySelector('td:first-child').textContent.toLowerCase();
-                    if (host.includes(searchTerm)) {
-                        show = true;
-                    }
-                });
-            }
-            
-            if (show) {
-                appRow.style.display = '';
-                if (instancesRow) instancesRow.style.display = '';
-            } else {
-                appRow.style.display = 'none';
-                if (instancesRow) instancesRow.style.display = 'none';
-            }
-        });
+    // Initialize DataTables with search
+    $('#activeTable').DataTable({
+        pageLength: 25,
+        order: [[0, 'asc']],
+        dom: '<"d-flex justify-content-between align-items-center mb-3"<"d-flex align-items-center"l><"d-flex align-items-center"f>>rtip',
+        language: {
+            search: "_INPUT_",
+            searchPlaceholder: "Search applications..."
+        }
+    });
+    
+    $('#completedTable').DataTable({
+        pageLength: 25,
+        order: [[2, 'desc']],  // Sort by completion date
+        dom: '<"d-flex justify-content-between align-items-center mb-3"<"d-flex align-items-center"l><"d-flex align-items-center"f>>rtip',
+        language: {
+            search: "_INPUT_",
+            searchPlaceholder: "Search completed applications..."
+        }
+    });
+    
+    // Hide default DataTables search since we have our custom one
+    $('.dataTables_filter').hide();
+    
+    // Bind custom search inputs to DataTables search
+    $('#activeSearchInput').on('keyup', function() {
+        $('#activeTable').DataTable().search(this.value).draw();
+    });
+    
+    $('#completedSearchInput').on('keyup', function() {
+        $('#completedTable').DataTable().search(this.value).draw();
     });
     
     // Check status of visible instances every 30 seconds
