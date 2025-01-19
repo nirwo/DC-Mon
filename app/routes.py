@@ -121,11 +121,11 @@ def check_status(instance_id):
 def import_data_file():
     try:
         if 'file' not in request.files:
-            return jsonify({'error': 'No file uploaded'}), 400
+            return jsonify({'status': 'error', 'message': 'No file uploaded'}), 400
             
         file = request.files['file']
         if not file.filename:
-            return jsonify({'error': 'No file selected'}), 400
+            return jsonify({'status': 'error', 'message': 'No file selected'}), 400
             
         if file.filename.endswith('.csv'):
             # Handle CSV import
@@ -168,17 +168,22 @@ def import_data_file():
             
         else:
             return jsonify({
-                'error': 'Invalid file format. Please upload a CSV or JSON file.'
+                'status': 'error',
+                'message': 'Invalid file format. Please upload a CSV or JSON file.'
             }), 400
 
         # Process the data using the API endpoint
         response = process_import_data(data)
-        return response
+        if response[1] == 200:  # Check if import was successful
+            return jsonify({'status': 'success', 'message': 'Data imported successfully'})
+        else:
+            return jsonify({'status': 'error', 'message': response[0].get_json()['error']}), response[1]
         
     except Exception as e:
         logger.error(f"Error in import_data: {str(e)}")
         return jsonify({
-            'error': f'Import failed: {str(e)}'
+            'status': 'error',
+            'message': f'Import failed: {str(e)}'
         }), 500
 
 @main.route('/api/import_data', methods=['POST'])
@@ -219,7 +224,7 @@ def process_import_data(data=None):
                     team_id=app_data.get('team_id')
                 )
                 app_dict = app.to_dict()
-                app_dict['_id'] = ObjectId()
+                app_dict['_id'] = ObjectId()  # Explicitly set ObjectId
                 result = db.applications.insert_one(app_dict)
                 app_map[app_data['_id']] = str(result.inserted_id)
                 

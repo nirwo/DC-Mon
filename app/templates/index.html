@@ -124,14 +124,14 @@ function importCSV() {
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
 
-    fetch('/import_csv', {
+    fetch('/import_data', {
         method: 'POST',
         body: formData
     })
     .then(response => response.json())
     .then(data => {
-        if (data.error) {
-            alert('Error: ' + data.error);
+        if (data.status === 'error') {
+            alert('Error: ' + data.message);
         } else {
             alert('Import successful');
             location.reload();
