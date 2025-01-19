@@ -53,3 +53,93 @@ Dependencies are specified as host:port pairs, separated by semicolons. For exam
 auth.internal:9000;user.internal:9001
 ```
 This means the application depends on both the Authentication Service and User Service.
+
+## Docker Setup
+
+### Prerequisites
+
+- Docker
+- Docker Compose
+
+### Quick Start
+
+1. Clone the repository:
+```bash
+git clone https://github.com/your-username/shutdown-manager.git
+cd shutdown-manager
+```
+
+2. Start the application using Docker Compose:
+```bash
+docker-compose up --build
+```
+
+The application will be available at http://localhost:5001
+
+### Development Setup
+
+1. Install dependencies:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+2. Set environment variables (optional):
+```bash
+export FLASK_APP=run.py
+export FLASK_ENV=development
+export DATABASE_URL=postgresql://dcmon:dcmon@localhost:5432/dcmon
+```
+
+3. Run database migrations:
+```bash
+flask db upgrade
+```
+
+4. Start the development server:
+```bash
+flask run
+```
+
+### Docker Configuration
+
+The application uses two Docker containers:
+- `web`: Flask application
+- `db`: PostgreSQL database
+
+### Environment Variables
+
+- `DATABASE_URL`: PostgreSQL connection string
+- `FLASK_ENV`: Application environment (development/production)
+- `SECRET_KEY`: Application secret key
+
+### Persistent Storage
+
+PostgreSQL data is stored in a Docker volume `postgres_data` to persist between container restarts.
+
+## Testing
+
+Run tests using:
+```bash
+pytest
+```
+
+## Troubleshooting
+
+1. Database Connection Issues:
+   - Ensure PostgreSQL container is running: `docker-compose ps`
+   - Check logs: `docker-compose logs db`
+
+2. Application Errors:
+   - Check application logs: `docker-compose logs web`
+   - Restart containers: `docker-compose restart`
+
+3. Reset Database:
+   - Stop containers: `docker-compose down`
+   - Remove volume: `docker volume rm shutdown-manager_postgres_data`
+   - Rebuild: `docker-compose up --build`
+
+## License
+
+MIT License
