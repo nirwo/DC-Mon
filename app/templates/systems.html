@@ -36,8 +36,8 @@
                     <tbody>
                         {% for instance in instances %}
                         <tr data-instance-id="{{ instance.id }}">
-                            <td>{{ instance.application.team.name }}</td>
-                            <td>{{ instance.application.name }}</td>
+                            <td class="system-team" data-system-id="{{ instance.id }}">{{ instance.application.team.name }}</td>
+                            <td class="system-name" data-system-id="{{ instance.id }}">{{ instance.application.name }}</td>
                             <td>{{ instance.host }}</td>
                             <td>{{ instance.port }}</td>
                             <td>
@@ -285,9 +285,8 @@ function confirmDelete(appId, instanceId) {
 }
 
 function editSystem(systemId) {
-    const row = document.querySelector(`[data-instance-id="${systemId}"]`);
-    const nameElement = row.querySelector('td:nth-child(2)');
-    const teamElement = row.querySelector('td:nth-child(1)');
+    const nameElement = document.querySelector(`.system-name[data-system-id="${systemId}"]`);
+    const teamElement = document.querySelector(`.system-team[data-system-id="${systemId}"]`);
     
     const currentName = nameElement.textContent;
     const currentTeam = teamElement.textContent;
@@ -298,7 +297,7 @@ function editSystem(systemId) {
     const newTeam = prompt('Enter new team:', currentTeam);
     if (!newTeam) return;
     
-    fetch('/update_system', {
+    fetch('/update_system_info', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'

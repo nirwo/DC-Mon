@@ -770,7 +770,7 @@ def delete_all_applications():
         main.logger.error(f"Error deleting all applications: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@main.route('/update_system', methods=['POST'])
+@main.route('/update_system_info', methods=['POST'])
 def update_system():
     try:
         data = request.get_json()
