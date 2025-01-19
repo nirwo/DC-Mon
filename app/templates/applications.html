@@ -444,7 +444,7 @@ function deleteApplication(id) {
         return;
     }
     
-    fetch(`/delete_application/${id}`, {
+    fetch(`/delete_application/${id}`, { 
         method: 'DELETE',
         headers: {
             'Content-Type': 'application/json'
@@ -528,13 +528,12 @@ function saveEditApplication() {
     const dependencies = Array.from(document.querySelectorAll('#dependenciesList input:checked'))
         .map(cb => parseInt(cb.value));
     
-    fetch('/update_application', {
+    fetch(`/update_application/${appId}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-            id: appId,
             name: name,
             team: team,
             dependencies: dependencies

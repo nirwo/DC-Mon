@@ -469,77 +469,60 @@ def get_application(app_id):
         return jsonify({'status': 'error', 'message': str(e)}), 400
 
 @main.route('/update_application/<int:app_id>', methods=['POST'])
-def update_application(app_id):
+def update_application_details(app_id):
     try:
-        app = Application.query.get_or_404(app_id)
         data = request.get_json()
         
-        if not data:
-            return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+        # Get application
+        application = Application.query.get_or_404(app_id)
         
-        if 'name' not in data or not data['name']:
-            return jsonify({'status': 'error', 'message': 'Application name is required'}), 400
+        # Update team if it exists, create if it doesn't
+        team = Team.query.filter_by(name=data['team']).first()
+        if not team:
+            team = Team(name=data['team'])
+            db.session.add(team)
         
-        # Update application details
-        app.name = data['name']
-        app.team_id = data['team_id']
-        app.shutdown_order = data.get('shutdown_order', 100)
-        app.dependencies = data.get('dependencies', [])
+        # Update application
+        application.name = data['name']
+        application.team_id = team.id
+        application.shutdown_order = data.get('shutdown_order', 100)
+        application.dependencies = data.get('dependencies', [])
         
         # Update instances
         if 'instances' in data:
-            updated_ids = set()
+            # Delete removed instances
+            current_instance_ids = [i.get('id') for i in data['instances'] if i.get('id')]
+            ApplicationInstance.query.filter(
+                ApplicationInstance.application_id == app_id,
+                ~ApplicationInstance.id.in_(current_instance_ids) if current_instance_ids else True
+            ).delete(synchronize_session=False)
             
-            for inst_data in data['instances']:
-                if 'id' in inst_data and inst_data['id']:
-                    # Update existing instance
-                    instance = next((i for i in app.instances if i.id == inst_data['id']), None)
+            # Update/create instances
+            for instance_data in data['instances']:
+                instance_id = instance_data.get('id')
+                if instance_id:
+                    instance = ApplicationInstance.query.get(instance_id)
                     if instance:
-                        instance.host = inst_data['host']
-                        instance.port = inst_data.get('port')
-                        instance.webui_url = inst_data.get('webui_url')
-                        instance.db_host = inst_data.get('db_host')
-                        updated_ids.add(instance.id)
+                        instance.host = instance_data.get('host')
+                        instance.port = instance_data.get('port')
+                        instance.webui_url = instance_data.get('webui_url')
+                        instance.db_host = instance_data.get('db_host')
                 else:
-                    # Create new instance
                     instance = ApplicationInstance(
-                        application=app,
-                        host=inst_data['host'],
-                        port=inst_data.get('port'),
-                        webui_url=inst_data.get('webui_url'),
-                        db_host=inst_data.get('db_host')
+                        application_id=app_id,
+                        host=instance_data.get('host'),
+                        port=instance_data.get('port'),
+                        webui_url=instance_data.get('webui_url'),
+                        db_host=instance_data.get('db_host')
                     )
                     db.session.add(instance)
-            
-            # Remove instances that weren't updated
-            for instance in app.instances:
-                if instance.id not in updated_ids:
-                    db.session.delete(instance)
         
-        try:
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({
-                'status': 'error',
-                'message': f"Database error: {str(e)}"
-            }), 400
-        
-        return jsonify({
-            'status': 'success',
-            'message': f'Application {app.name} updated successfully',
-            'data': {
-                'id': app.id,
-                'name': app.name,
-                'team_id': app.team_id,
-                'shutdown_order': app.shutdown_order,
-                'dependencies': app.dependencies
-            }
-        })
-        
+        db.session.commit()
+        return jsonify({'status': 'success'})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'status': 'error', 'message': str(e)}), 400
+        main.logger.error(f"Error updating application: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @main.route('/get_shutdown_sequence/<int:app_id>')
 def get_shutdown_sequence(app_id):
