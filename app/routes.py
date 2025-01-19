@@ -697,36 +697,21 @@ def reactivate_application(app_id):
             'message': str(e)
         }), 400
 
-@main.route('/delete_application/<int:app_id>', methods=['DELETE'])
-def delete_application(app_id):
-    try:
-        app = Application.query.get_or_404(app_id)
-        db.session.delete(app)
-        try:
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({
-                'status': 'error',
-                'message': f"Database error: {str(e)}"
-            }), 400
-        
-        return jsonify({
-            'status': 'success',
-            'message': f'Application {app.name} deleted'
-        })
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 400
-
 @main.route('/delete_instance/<int:instance_id>', methods=['POST'])
 def delete_instance(instance_id):
     try:
         instance = ApplicationInstance.query.get_or_404(instance_id)
+        app_id = instance.application_id
         db.session.delete(instance)
+        
+        # Check if this was the last instance
+        remaining_instances = ApplicationInstance.query.filter_by(application_id=app_id).count()
+        if remaining_instances == 0:
+            # If no instances left, delete the application too
+            app = Application.query.get(app_id)
+            if app:
+                db.session.delete(app)
+        
         db.session.commit()
         return jsonify({'status': 'success'})
     except Exception as e:
@@ -737,6 +722,9 @@ def delete_instance(instance_id):
 def delete_application(app_id):
     try:
         app = Application.query.get_or_404(app_id)
+        # Delete all instances first
+        ApplicationInstance.query.filter_by(application_id=app_id).delete()
+        # Then delete the application
         db.session.delete(app)
         db.session.commit()
         return jsonify({'status': 'success'})
