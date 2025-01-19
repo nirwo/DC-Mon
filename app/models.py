@@ -2,33 +2,38 @@ from datetime import datetime
 from bson import ObjectId
 
 class Team:
-    def __init__(self, name, _id=None):
+    def __init__(self, name, description=None, _id=None):
         self._id = ObjectId(_id) if _id else ObjectId()
         self.name = name
+        self.description = description
         
     @classmethod
     def from_dict(cls, data):
         if not data:
             return None
         return cls(
-            name=data.get('name'),
-            _id=data.get('_id')
+            name=data["name"],
+            description=data.get("description"),
+            _id=data.get("_id")
         )
 
     def to_dict(self):
         return {
-            '_id': str(self._id),
-            'name': self.name
+            "_id": str(self._id),
+            "name": self.name,
+            "description": self.description
         }
 
     def __repr__(self):
         return f'<Team {self.name}>'
 
 class Application:
-    def __init__(self, name, team_id=None, _id=None):
+    def __init__(self, name, team_id=None, state="notStarted", enabled=False, _id=None):
         self._id = ObjectId(_id) if _id else ObjectId()
         self.name = name
         self.team_id = ObjectId(team_id) if team_id else None
+        self.state = state
+        self.enabled = enabled
         self.created_at = datetime.utcnow()
         self.updated_at = datetime.utcnow()
 
@@ -37,9 +42,11 @@ class Application:
         if not data:
             return None
         app = cls(
-            name=data.get('name'),
-            team_id=data.get('team_id'),
-            _id=data.get('_id')
+            name=data["name"],
+            team_id=data.get("team_id"),
+            state=data.get("state", "notStarted"),
+            enabled=data.get("enabled", False),
+            _id=data.get("_id")
         )
         if 'created_at' in data:
             app.created_at = data['created_at']
@@ -49,11 +56,13 @@ class Application:
 
     def to_dict(self):
         return {
-            '_id': str(self._id),
-            'name': self.name,
-            'team_id': str(self.team_id) if self.team_id else None,
-            'created_at': self.created_at,
-            'updated_at': self.updated_at
+            "_id": str(self._id),
+            "name": self.name,
+            "team_id": str(self.team_id) if self.team_id else None,
+            "state": self.state,
+            "enabled": self.enabled,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at
         }
 
 class ApplicationInstance:
