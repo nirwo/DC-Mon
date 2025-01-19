@@ -562,6 +562,74 @@ DevOps,Load Balancer,lb-server,443,http://lb-server,3,Web Server</pre>
 </div>
 
 <style>
+.card {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 1rem;
+}
+
+.card-header {
+    font-weight: bold;
+}
+
+.status-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-left: 5px;
+}
+
+.status-dot.running {
+    background-color: #28a745;
+    box-shadow: 0 0 5px #28a745;
+}
+
+.status-dot.stopped {
+    background-color: #dc3545;
+    box-shadow: 0 0 5px #dc3545;
+}
+
+.status-dot.unknown {
+    background-color: #ffc107;
+    box-shadow: 0 0 5px #ffc107;
+}
+
+.team-card {
+    background-color: #f8f9fa;
+    border-left: 5px solid #007bff;
+}
+
+.app-card {
+    background-color: #fff;
+    border-left: 5px solid #28a745;
+}
+
+.system-card {
+    background-color: #fff;
+    border-left: 5px solid #17a2b8;
+}
+
+.team-stats {
+    background-color: #e9ecef;
+    padding: 0.5rem;
+    border-radius: 4px;
+    margin-top: 0.5rem;
+}
+
+.nav-tabs .nav-link.active {
+    font-weight: bold;
+    border-bottom: 3px solid #007bff;
+}
+
+.badge {
+    font-size: 0.8rem;
+    padding: 0.4em 0.6em;
+}
+
+.badge.bg-running { background-color: #28a745 !important; }
+.badge.bg-stopped { background-color: #dc3545 !important; }
+.badge.bg-unknown { background-color: #ffc107 !important; }
+
 .status-dot {
     display: inline-block;
     width: 10px;
@@ -600,9 +668,6 @@ DevOps,Load Balancer,lb-server,443,http://lb-server,3,Web Server</pre>
 }
 </style>
 
-{% endblock %}
-
-{% block scripts %}
 <script>
 // Alert handling
 function showAlert(type, message, duration = 5000) {
@@ -1091,6 +1156,129 @@ function getStatusBadgeClass(status) {
     }
 }
 
+let updateInterval;
+
+function startAutoUpdate() {
+    // Initial update
+    updateSystemsList();
+    updateTeamsList();
+    
+    // Clear existing interval if any
+    if (updateInterval) {
+        clearInterval(updateInterval);
+    }
+    
+    // Set new interval - update every 10 seconds
+    updateInterval = setInterval(() => {
+        updateSystemsList();
+        updateTeamsList();
+    }, 10000);
+}
+
+function updateTeamsList() {
+    fetch('/api/teams')
+        .then(response => response.json())
+        .then(teams => {
+            const teamsList = document.getElementById('teams-list');
+            if (!teamsList) return;
+            
+            teamsList.innerHTML = '';
+            teams.forEach(team => {
+                const appCount = team.applications ? team.applications.length : 0;
+                const systemCount = team.applications ? team.applications.reduce((acc, app) => acc + (app.systems ? app.systems.length : 0), 0) : 0;
+                
+                const teamHtml = `
+                    <div class="col-md-4 mb-4">
+                        <div class="card team-card">
+                            <div class="card-body">
+                                <h5 class="card-title d-flex justify-content-between">
+                                    ${team.name}
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteTeam('${team._id}')">Delete</button>
+                                </h5>
+                                <div class="team-stats">
+                                    <div><strong>Applications:</strong> ${appCount}</div>
+                                    <div><strong>Total Systems:</strong> ${systemCount}</div>
+                                </div>
+                                ${team.description ? `<p class="card-text mt-2">${team.description}</p>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                teamsList.insertAdjacentHTML('beforeend', teamHtml);
+            });
+        })
+        .catch(error => {
+            console.error('Error updating teams:', error);
+            showAlert('danger', 'Failed to update teams list');
+        });
+}
+
+function updateSystemsList() {
+    fetch('/api/systems')
+        .then(response => {
+            if (!response.ok) throw new Error(response.statusText);
+            return response.json();
+        })
+        .then(systems => {
+            const runningSystems = document.getElementById('running-systems');
+            const stoppedSystems = document.getElementById('stopped-systems');
+            const unknownSystems = document.getElementById('unknown-systems');
+            
+            if (runningSystems) runningSystems.innerHTML = '';
+            if (stoppedSystems) stoppedSystems.innerHTML = '';
+            if (unknownSystems) unknownSystems.innerHTML = '';
+            
+            systems.forEach(system => {
+                const systemHtml = `
+                    <div class="system-card p-3 mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="mb-0">
+                                    ${system.name}
+                                    <span class="status-dot ${system.status}"></span>
+                                </h5>
+                                <small class="text-muted">Host: ${system.host}</small>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" 
+                                        ${system.status === 'running' ? 'checked' : ''} 
+                                        onchange="toggleSystemStatus('${system.id}', this)">
+                                </div>
+                            </div>
+                        </div>
+                        ${system.port ? `<div class="mt-1"><small class="text-muted">Port: ${system.port}</small></div>` : ''}
+                        ${system.webui_url ? `<div class="mt-2">
+                            <a href="${system.webui_url}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-box-arrow-up-right"></i> Open WebUI
+                            </a>
+                        </div>` : ''}
+                    </div>
+                `;
+                
+                if (system.status === 'running') {
+                    if (runningSystems) runningSystems.insertAdjacentHTML('beforeend', systemHtml);
+                } else if (system.status === 'stopped') {
+                    if (stoppedSystems) stoppedSystems.insertAdjacentHTML('beforeend', systemHtml);
+                } else {
+                    if (unknownSystems) unknownSystems.insertAdjacentHTML('beforeend', systemHtml);
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error updating systems:', error);
+            showAlert('danger', 'Failed to update systems status');
+        });
+}
+
+// Start auto-update when page loads
+document.addEventListener('DOMContentLoaded', startAutoUpdate);
+
+// Restart auto-update when tab changes
+document.querySelectorAll('a[data-bs-toggle="tab"]').forEach(tab => {
+    tab.addEventListener('shown.bs.tab', startAutoUpdate);
+});
+
 document.addEventListener('DOMContentLoaded', function() {
     updateSystemsList();
 
@@ -1165,4 +1353,7 @@ function handleImport(event) {
     });
 }
 </script>
+{% endblock %}
+
+{% block scripts %}
 {% endblock %}

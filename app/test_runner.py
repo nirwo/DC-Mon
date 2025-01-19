@@ -141,15 +141,36 @@ def run_test_suite(app_id):
         )
 
 def process_test_jobs():
-    """Process pending test jobs"""
+    """Process pending test jobs and run hourly system checks"""
     db = get_db()
+    last_hourly_check = None
     
     while True:
         try:
-            # Find pending test job
+            current_time = datetime.utcnow()
+            
+            # Run hourly system check
+            if not last_hourly_check or (current_time - last_hourly_check).total_seconds() >= 3600:
+                logger.info("Running hourly system check")
+                
+                # Get all applications
+                applications = db.applications.find()
+                for app in applications:
+                    # Create test job for each application
+                    test_job = {
+                        'app_id': str(app['_id']),
+                        'status': 'pending',
+                        'created_at': current_time
+                    }
+                    db.test_jobs.insert_one(test_job)
+                    logger.info(f"Created hourly test job for application {app['name']}")
+                
+                last_hourly_check = current_time
+            
+            # Process pending test jobs
             job = db.test_jobs.find_one_and_update(
                 {'status': 'pending'},
-                {'$set': {'status': 'running', 'started_at': datetime.utcnow()}},
+                {'$set': {'status': 'running', 'started_at': current_time}},
                 sort=[('created_at', 1)]
             )
             
@@ -174,13 +195,12 @@ def process_test_jobs():
                             'completed_at': datetime.utcnow()
                         }}
                     )
-            else:
-                # No pending jobs, wait before checking again
-                time.sleep(5)
-                
+            
+            time.sleep(1)  # Prevent CPU overload
+            
         except Exception as e:
             logger.error(f"Error in test job processor: {str(e)}")
-            time.sleep(5)
+            time.sleep(5)  # Wait before retrying
 
 if __name__ == '__main__':
     logger.info("Starting test runner service")
