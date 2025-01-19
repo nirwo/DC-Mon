@@ -34,17 +34,31 @@ def import_apps():
         return jsonify({'error': 'Invalid file format. Please upload a CSV file.'}), 400
     
     merge_mode = request.form.get('merge_mode', 'skip')
+    encoding = request.form.get('encoding', 'utf-8')
+    
     if merge_mode not in ['skip', 'merge', 'replace']:
         return jsonify({'error': 'Invalid merge mode'}), 400
     
     try:
-        # Read CSV file
-        csv_data = file.read().decode('utf-8').splitlines()
-        reader = csv.DictReader(csv_data)
+        # Read CSV file with specified encoding
+        try:
+            csv_data = file.read().decode(encoding).splitlines()
+        except UnicodeDecodeError:
+            # Try common encodings if specified one fails
+            for enc in ['utf-8', 'latin1', 'cp1252', 'iso-8859-1']:
+                try:
+                    file.seek(0)
+                    csv_data = file.read().decode(enc).splitlines()
+                    encoding = enc
+                    break
+                except UnicodeDecodeError:
+                    continue
+            else:
+                return jsonify({'error': 'Unable to decode file. Please specify correct encoding.'}), 400
         
         # Validate headers
         required_fields = ['name', 'team', 'host']
-        missing_fields = [field for field in required_fields if field not in reader.fieldnames]
+        missing_fields = [field for field in required_fields if field not in csv.DictReader(csv_data).fieldnames]
         if missing_fields:
             return jsonify({
                 'error': f'Missing required fields: {", ".join(missing_fields)}'
@@ -70,7 +84,7 @@ def import_apps():
         
         # Process rows in chunks
         CHUNK_SIZE = 100
-        rows = list(reader)
+        rows = list(csv.DictReader(csv_data))
         total_rows = len(rows)
         
         for i in range(0, total_rows, CHUNK_SIZE):

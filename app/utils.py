@@ -6,28 +6,35 @@ from datetime import datetime
 from typing import Dict, Optional, Any
 import os
 
-def check_port(host: str, port: int, timeout: int = 2) -> bool:
+def check_port(host: str, port: Optional[int] = None, timeout: int = 2) -> bool:
+    if not port:
+        return True
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(timeout)
-            result = sock.connect_ex((host, port))
+            result = sock.connect_ex((host, int(port)))
             return result == 0
-    except:
+    except (socket.error, ValueError):
         return False
 
-def check_webui(url: str, timeout: int = 5) -> bool:
+def check_webui(url: str, timeout: int = 5, encoding: str = 'utf-8') -> bool:
+    if not url:
+        return True
     try:
         response = requests.get(url, timeout=timeout)
+        response.encoding = encoding
         return response.status_code == 200
     except:
         return False
 
 def check_db_connection(host: str) -> bool:
-    # This is a simplified check - in real implementation,
-    # you'd want to check specific database types
+    if not host:
+        return True
     try:
-        host, port = host.split(':')
-        return check_port(host, int(port))
+        if ':' in host:
+            host, port = host.split(':')
+            return check_port(host, int(port))
+        return check_port(host)
     except:
         return False
 
