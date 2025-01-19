@@ -6,6 +6,7 @@ from app.database import get_db
 import csv
 import requests
 import logging
+import os
 from bson import ObjectId
 from io import StringIO
 
@@ -14,6 +15,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 main = Blueprint('main', __name__)
+
+def check_host_status(host):
+    try:
+        response = os.system(f"ping -c 1 -W 1 {host} > /dev/null 2>&1")
+        return response == 0
+    except:
+        return False
 
 @main.route('/')
 def index():
@@ -171,178 +179,108 @@ def check_status(instance_id):
 
 @main.route('/import', methods=['POST'])
 def import_data():
-    if 'file' not in request.files:
-        return jsonify({'success': False, 'error': 'No file uploaded'})
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'success': False, 'error': 'No file selected'})
-    
-    if not file.filename.endswith('.csv'):
-        return jsonify({'success': False, 'error': 'Only CSV files are allowed'})
-    
     try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'})
+            
+        file = request.files['file']
+        if not file.filename.endswith('.csv'):
+            return jsonify({'success': False, 'error': 'Only CSV files are supported'})
+            
         content = file.read().decode('utf-8')
         csv_reader = csv.DictReader(StringIO(content))
-        rows = list(csv_reader)
         
         db = get_db()
-        host_conflicts = {}
+        errors = []
+        success_count = 0
         
-        for row in rows:
-            host = row.get('host', '').strip()
-            if not host:
-                continue
-            
-            existing = db.systems.find_one({'host': host})
-            if existing:
-                app = db.applications.find_one({'_id': ObjectId(existing['application_id'])})
-                if app and app['name'] != row.get('name'):
-                    if host not in host_conflicts:
-                        team = db.teams.find_one({'_id': ObjectId(app['team_id'])}) if app else None
-                        host_conflicts[host] = {
-                            'existing': {
-                                'host': host,
-                                'name': existing['name'],
-                                'team': team['name'] if team else 'Unknown',
-                                'application': app['name'] if app else 'Unknown',
-                                'port': existing.get('port'),
-                                'webui_url': existing.get('webui_url')
-                            },
-                            'new': {
-                                'host': host,
-                                'name': host,  # Use host as system name
-                                'team': row.get('team'),
-                                'port': row.get('port'),
-                                'webui_url': row.get('webui_url')
-                            }
-                        }
-        
-        if host_conflicts:
-            return jsonify({
-                'success': False,
-                'error': 'duplicate_found',
-                'duplicates': list(host_conflicts.values())
-            })
-        
-        for row in rows:
-            team_name = row.get('team', 'Default Team')
-            team = db.teams.find_one_and_update(
-                {'name': team_name},
-                {'$set': {'name': team_name}},
-                upsert=True,
-                return_document=True
-            )
-            team_id = team['_id']
-            
-            app_name = row.get('name')
-            host = row.get('host', '').strip()
-            if not app_name or not host:
-                continue
+        for row in csv_reader:
+            try:
+                # Check for required fields
+                required_fields = ['team_name', 'application_name', 'host']
+                if not all(field in row for field in required_fields):
+                    errors.append(f"Missing required fields in row: {row}")
+                    continue
+                    
+                # Create or get team
+                team = db.teams.find_one_and_update(
+                    {'name': row['team_name']},
+                    {'$setOnInsert': {'name': row['team_name']}},
+                    upsert=True,
+                    return_document=True
+                )
                 
-            app_data = {
-                'name': app_name,
-                'team_id': str(team_id),
-                'shutdown_order': int(row.get('shutdown order', 0)) if row.get('shutdown order') else 0,
-                'dependencies': [dep.strip() for dep in row.get('dependency', '').split(',') if dep.strip()]
-            }
-            
-            app = db.applications.find_one_and_update(
-                {'name': app_name, 'team_id': str(team_id)},
-                {'$set': app_data},
-                upsert=True,
-                return_document=True
-            )
-            app_id = app['_id']
-            
-            system_data = {
-                'name': host,  # Use host as system name
-                'application_id': str(app_id),
-                'host': host,
-                'port': int(row.get('port')) if row.get('port') else None,
-                'webui_url': row.get('webui_url'),
-                'status': 'unknown',
-                'last_checked': datetime.utcnow()
-            }
-            
-            db.systems.find_one_and_update(
-                {'host': host},
-                {'$set': system_data},
-                upsert=True
-            )
+                # Create or get application
+                app = db.applications.find_one_and_update(
+                    {
+                        'name': row['application_name'],
+                        'team_id': str(team['_id'])
+                    },
+                    {
+                        '$setOnInsert': {
+                            'name': row['application_name'],
+                            'team_id': str(team['_id']),
+                            'shutdown_order': int(row.get('shutdown_order', 0))
+                        }
+                    },
+                    upsert=True,
+                    return_document=True
+                )
+                
+                # Create or update system
+                system_data = {
+                    'host': row['host'],
+                    'application_id': str(app['_id']),
+                    'port': row.get('port'),
+                    'webui_url': row.get('webui_url'),
+                    'status': 'unknown'
+                }
+                
+                db.systems.find_one_and_update(
+                    {'host': row['host'], 'application_id': str(app['_id'])},
+                    {'$set': system_data},
+                    upsert=True
+                )
+                
+                success_count += 1
+                
+            except Exception as e:
+                errors.append(f"Error processing row {row}: {str(e)}")
+                continue
         
-        return jsonify({'success': True})
+        return jsonify({
+            'success': True,
+            'message': f"Successfully imported {success_count} items",
+            'errors': errors if errors else None
+        })
         
     except Exception as e:
         logger.error(f"Import error: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
-@main.route('/import/resolve', methods=['POST'])
-def resolve_import():
+@main.route('/api/systems/<system_id>/status', methods=['GET'])
+def get_system_status(system_id):
     try:
-        data = request.json
-        if not data or 'resolutions' not in data:
-            return jsonify({'success': False, 'error': 'No resolution data provided'})
-            
         db = get_db()
+        system = db.systems.find_one({'_id': ObjectId(system_id)})
+        if not system:
+            return jsonify({'success': False, 'error': 'System not found'})
+            
+        is_running = check_host_status(system['host'])
+        status = 'running' if is_running else 'stopped'
         
-        for resolution in data['resolutions']:
-            host = resolution.get('host')
-            action = resolution.get('action')
-            
-            if not host or not action:
-                continue
-                
-            if action == 'skip':
-                continue
-                
-            system_data = resolution.get('data', {})
-            team_name = system_data.get('team', 'Default Team')
-            
-            # Get or create team
-            team = db.teams.find_one_and_update(
-                {'name': team_name},
-                {'$set': {'name': team_name}},
-                upsert=True,
-                return_document=True
-            )
-            
-            # Get or create application
-            app_data = {
-                'name': system_data.get('name'),
-                'team_id': str(team['_id']),
-                'shutdown_order': int(system_data.get('shutdown_order', 0)),
-                'dependencies': system_data.get('dependencies', [])
-            }
-            
-            app = db.applications.find_one_and_update(
-                {'name': app_data['name'], 'team_id': app_data['team_id']},
-                {'$set': app_data},
-                upsert=True,
-                return_document=True
-            )
-            
-            # Update or replace system
-            system_update = {
-                'name': system_data.get('name'),
-                'application_id': str(app['_id']),
-                'host': host,
-                'port': int(system_data.get('port')) if system_data.get('port') else None,
-                'webui_url': system_data.get('webui_url'),
-                'status': 'unknown',
-                'last_checked': datetime.utcnow()
-            }
-            
-            if action == 'update':
-                db.systems.update_one({'host': host}, {'$set': system_update})
-            elif action == 'replace':
-                db.systems.delete_one({'host': host})
-                db.systems.insert_one(system_update)
-                
-        return jsonify({'success': True})
+        # Update system status in database
+        db.systems.update_one(
+            {'_id': ObjectId(system_id)},
+            {'$set': {'status': status}}
+        )
         
+        return jsonify({
+            'success': True,
+            'status': status
+        })
     except Exception as e:
-        logger.error(f"Resolution error: {str(e)}")
+        logger.error(f"Get system status error: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
 @main.route('/api/import_data', methods=['POST'])
@@ -643,38 +581,154 @@ def update_application():
         logger.error(f"Error in update_application: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@main.route('/api/applications/create', methods=['POST'])
-def create_application_api():
+@main.route('/api/applications/<app_id>', methods=['GET'])
+def get_application(app_id):
     try:
-        data = request.json
-        if not data or 'name' not in data or 'team_id' not in data:
-            return jsonify({'success': False, 'error': 'Application name and team ID are required'})
-            
         db = get_db()
-        app_data = {
-            'name': data['name'],
-            'team_id': data['team_id'],
-            'shutdown_order': int(data.get('shutdown_order', 0)),
-            'dependencies': data.get('dependencies', [])
+        app = db.applications.find_one({"_id": ObjectId(app_id)})
+        if app:
+            return jsonify(Application.from_dict(app).to_dict())
+        return jsonify({"error": "Application not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@main.route('/api/applications/<app_id>/run-tests', methods=['POST'])
+def run_application_tests(app_id):
+    db = get_db()
+    try:
+        app = db.applications.find_one({'_id': ObjectId(app_id)})
+        if not app:
+            return jsonify({'error': 'Application not found'}), 404
+            
+        # Queue test job in test runner container
+        test_job = {
+            'app_id': str(app_id),
+            'status': 'pending',
+            'created_at': datetime.utcnow()
         }
+        db.test_jobs.insert_one(test_job)
         
-        app = db.applications.find_one_and_update(
-            {'name': data['name'], 'team_id': data['team_id']},
-            {'$set': app_data},
-            upsert=True,
-            return_document=True
+        return jsonify({'status': 'success', 'message': 'Test job queued'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/applications/<app_id>/test-results')
+def get_test_results(app_id):
+    db = get_db()
+    try:
+        results = list(db.test_results.find({'app_id': str(app_id)}).sort('created_at', -1).limit(1))
+        if not results:
+            return jsonify({'results': []})
+            
+        return jsonify({'results': results[0].get('results', [])})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/systems')
+def get_systems():
+    db = get_db()
+    systems = []
+    try:
+        for system in db.systems.find():
+            app = db.applications.find_one({'_id': ObjectId(system['application_id'])})
+            systems.append({
+                'id': str(system['_id']),
+                'name': system['name'],
+                'status': 'running' if app and app.get('enabled', False) else 'stopped',
+                'last_checked': system.get('last_checked', datetime.utcnow()),
+                'application_id': str(system['application_id'])
+            })
+        return jsonify(systems)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/systems/<system_id>/status', methods=['POST'])
+def update_system_status(system_id):
+    db = get_db()
+    data = request.get_json()
+    status = data.get('status')
+    
+    try:
+        db.systems.update_one(
+            {'_id': ObjectId(system_id)},
+            {'$set': {
+                'status': status,
+                'last_checked': datetime.utcnow()
+            }}
+        )
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/applications/<app_id>/state', methods=['POST'])
+def update_application_state(app_id):
+    db = get_db()
+    data = request.get_json()
+    new_state = data.get('state')
+    
+    try:
+        if new_state not in ['notStarted', 'inProgress', 'completed']:
+            return jsonify({'error': 'Invalid state'}), 400
+            
+        # Update application state
+        result = db.applications.update_one(
+            {'_id': ObjectId(app_id)},
+            {'$set': {
+                'state': new_state,
+                'updated_at': datetime.utcnow()
+            }}
         )
         
-        return jsonify({'success': True, 'application': {
-            'id': str(app['_id']),
-            'name': app['name'],
-            'team_id': app['team_id'],
-            'shutdown_order': app['shutdown_order'],
-            'dependencies': app['dependencies']
-        }})
+        if result.modified_count == 0:
+            return jsonify({'error': 'Application not found'}), 404
+            
+        return jsonify({'status': 'success'})
     except Exception as e:
-        logger.error(f"Create application error: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/applications/<app_id>/toggle', methods=['POST'])
+def toggle_application(app_id):
+    db = get_db()
+    data = request.get_json()
+    enabled = data.get('enabled', False)
+    
+    try:
+        # Update application
+        result = db.applications.update_one(
+            {'_id': ObjectId(app_id)},
+            {'$set': {
+                'enabled': enabled,
+                'updated_at': datetime.utcnow()
+            }}
+        )
+        
+        if result.modified_count == 0:
+            return jsonify({'error': 'Application not found'}), 404
+        
+        # Update all associated systems
+        status = 'running' if enabled else 'stopped'
+        db.systems.update_many(
+            {'application_id': str(app_id)},
+            {'$set': {
+                'status': status,
+                'last_checked': datetime.utcnow()
+            }}
+        )
+        
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/applications/states')
+def get_application_states():
+    db = get_db()
+    applications = []
+    for app in db.applications.find():
+        applications.append({
+            '_id': str(app['_id']),
+            'state': app.get('state', 'notStarted')
+        })
+    return jsonify(applications)
 
 @main.route('/api/applications/<app_id>/instances', methods=['POST'])
 def add_instance(app_id):
@@ -717,17 +771,6 @@ def list_applications():
         db = get_db()
         applications = [Application.from_dict(app) for app in db.applications.find()]
         return jsonify([app.to_dict() for app in applications])
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@main.route('/api/applications/<app_id>', methods=['GET'])
-def get_application(app_id):
-    try:
-        db = get_db()
-        app = db.applications.find_one({"_id": ObjectId(app_id)})
-        if app:
-            return jsonify(Application.from_dict(app).to_dict())
-        return jsonify({"error": "Application not found"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -863,141 +906,3 @@ def delete_system_api(system_id):
     except Exception as e:
         logger.error(f"Delete system error: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
-
-@main.route('/api/applications/states')
-def get_application_states():
-    db = get_db()
-    applications = []
-    for app in db.applications.find():
-        applications.append({
-            '_id': str(app['_id']),
-            'state': app.get('state', 'notStarted')
-        })
-    return jsonify(applications)
-
-@main.route('/api/applications/<app_id>/run-tests', methods=['POST'])
-def run_application_tests(app_id):
-    db = get_db()
-    try:
-        app = db.applications.find_one({'_id': ObjectId(app_id)})
-        if not app:
-            return jsonify({'error': 'Application not found'}), 404
-            
-        # Queue test job in test runner container
-        test_job = {
-            'app_id': str(app_id),
-            'status': 'pending',
-            'created_at': datetime.utcnow()
-        }
-        db.test_jobs.insert_one(test_job)
-        
-        return jsonify({'status': 'success', 'message': 'Test job queued'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/api/applications/<app_id>/test-results')
-def get_test_results(app_id):
-    db = get_db()
-    try:
-        results = list(db.test_results.find({'app_id': str(app_id)}).sort('created_at', -1).limit(1))
-        if not results:
-            return jsonify({'results': []})
-            
-        return jsonify({'results': results[0].get('results', [])})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/api/systems')
-def get_systems():
-    db = get_db()
-    systems = []
-    try:
-        for system in db.systems.find():
-            app = db.applications.find_one({'_id': ObjectId(system['application_id'])})
-            systems.append({
-                'id': str(system['_id']),
-                'name': system['name'],
-                'status': 'running' if app and app.get('enabled', False) else 'stopped',
-                'last_checked': system.get('last_checked', datetime.utcnow()),
-                'application_id': str(system['application_id'])
-            })
-        return jsonify(systems)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/api/systems/<system_id>/status', methods=['POST'])
-def update_system_status(system_id):
-    db = get_db()
-    data = request.get_json()
-    status = data.get('status')
-    
-    try:
-        db.systems.update_one(
-            {'_id': ObjectId(system_id)},
-            {'$set': {
-                'status': status,
-                'last_checked': datetime.utcnow()
-            }}
-        )
-        return jsonify({'status': 'success'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/api/applications/<app_id>/state', methods=['POST'])
-def update_application_state(app_id):
-    db = get_db()
-    data = request.get_json()
-    new_state = data.get('state')
-    
-    try:
-        if new_state not in ['notStarted', 'inProgress', 'completed']:
-            return jsonify({'error': 'Invalid state'}), 400
-            
-        # Update application state
-        result = db.applications.update_one(
-            {'_id': ObjectId(app_id)},
-            {'$set': {
-                'state': new_state,
-                'updated_at': datetime.utcnow()
-            }}
-        )
-        
-        if result.modified_count == 0:
-            return jsonify({'error': 'Application not found'}), 404
-            
-        return jsonify({'status': 'success'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/api/applications/<app_id>/toggle', methods=['POST'])
-def toggle_application(app_id):
-    db = get_db()
-    data = request.get_json()
-    enabled = data.get('enabled', False)
-    
-    try:
-        # Update application
-        result = db.applications.update_one(
-            {'_id': ObjectId(app_id)},
-            {'$set': {
-                'enabled': enabled,
-                'updated_at': datetime.utcnow()
-            }}
-        )
-        
-        if result.modified_count == 0:
-            return jsonify({'error': 'Application not found'}), 404
-        
-        # Update all associated systems
-        status = 'running' if enabled else 'stopped'
-        db.systems.update_many(
-            {'application_id': str(app_id)},
-            {'$set': {
-                'status': status,
-                'last_checked': datetime.utcnow()
-            }}
-        )
-        
-        return jsonify({'status': 'success'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
