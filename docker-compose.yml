@@ -6,6 +6,7 @@ services:
     ports:
       - "5001:5001"
     environment:
+      - PYTHONPATH=/app
       - FLASK_APP=app
       - FLASK_ENV=development
       - MONGODB_URI=mongodb://mongo:27017/shutdown_manager
@@ -35,6 +36,7 @@ services:
       context: .
       dockerfile: Dockerfile.test
     environment:
+      - PYTHONPATH=/app
       - MONGODB_URI=mongodb://mongo:27017/shutdown_manager
     volumes:
       - .:/app
