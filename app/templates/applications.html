@@ -279,14 +279,149 @@ function updateInstanceUrl(instanceId) {
     });
 }
 
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize tooltips
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl)
-    });
+function checkInstanceStatus(instanceId) {
+    const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
+    const statusBadge = row.querySelector('.badge');
     
-    // Add event listeners for search inputs
+    fetch(`/check_instance_status/${instanceId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                statusBadge.textContent = data.instance_status;
+                statusBadge.className = `badge ${data.instance_status === 'UP' ? 'bg-success' : 'bg-danger'}`;
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            statusBadge.textContent = 'Error';
+            statusBadge.className = 'badge bg-warning';
+        });
+}
+
+function updateInstanceUrl(instanceId) {
+    const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
+    const urlInput = row.querySelector('.webui-url');
+    const currentUrl = urlInput.value;
+    
+    fetch(`/update_instance_url/${instanceId}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            webui_url: currentUrl
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            showAlert('success', 'WebUI URL updated successfully');
+        } else {
+            showAlert('danger', 'Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('danger', 'Error updating WebUI URL');
+    });
+}
+
+function deleteInstance(instanceId) {
+    if (!confirm('Are you sure you want to delete this instance?')) {
+        return;
+    }
+    
+    fetch(`/delete_instance/${instanceId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
+            row.remove();
+            showAlert('success', 'Instance deleted successfully');
+        } else {
+            showAlert('danger', 'Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('danger', 'Error deleting instance');
+    });
+}
+
+function deleteApplication(id) {
+    if (!confirm('Are you sure you want to delete this application?')) {
+        return;
+    }
+    
+    fetch(`/delete_application/${id}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            showAlert('danger', 'Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('danger', 'Error deleting application');
+    });
+}
+
+function deleteSelectedApplications() {
+    const selectedApps = Array.from(document.querySelectorAll('input[name="selected_apps"]:checked'))
+        .map(checkbox => checkbox.value);
+    
+    if (selectedApps.length === 0) {
+        showAlert('warning', 'Please select at least one application');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to delete ${selectedApps.length} selected applications?`)) {
+        return;
+    }
+    
+    fetch('/delete_selected_applications', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            app_ids: selectedApps
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            showAlert('danger', 'Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('danger', 'Error deleting applications');
+    });
+}
+
+// Initialize event listeners when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle select all checkbox
+    const selectAllCheckbox = document.getElementById('selectAll');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('input[name="selected_apps"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+        });
+    }
+
+    // Handle search inputs
     const activeSearchInput = document.getElementById('activeSearchInput');
     const completedSearchInput = document.getElementById('completedSearchInput');
     
@@ -302,62 +437,19 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Check status of visible instances every 10 minutes
+    // Start periodic status checks for visible instances
     let statusCheckInterval = setInterval(() => {
-        const visibleInstances = document.querySelectorAll('.instance-row:not(.d-none) [data-instance-id]');
+        const visibleInstances = document.querySelectorAll('.instance-row:not([style*="display: none"]) [data-instance-id]');
         visibleInstances.forEach(instance => {
             checkInstanceStatus(instance.dataset.instanceId);
         });
-    }, 600000); // 10 minutes
+    }, 30000);
     
-    // Clear interval when page is hidden/inactive
-    document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-            clearInterval(statusCheckInterval);
-        } else {
-            statusCheckInterval = setInterval(() => {
-                const visibleInstances = document.querySelectorAll('.instance-row:not(.d-none) [data-instance-id]');
-                visibleInstances.forEach(instance => {
-                    checkInstanceStatus(instance.dataset.instanceId);
-                });
-            }, 600000);
-        }
+    // Clean up interval on page unload
+    window.addEventListener('beforeunload', () => {
+        clearInterval(statusCheckInterval);
     });
 });
-
-function checkInstanceStatus(instanceId) {
-    const row = document.querySelector(`[data-instance-id="${instanceId}"]`);
-    const statusBadge = row.querySelector('.badge');
-    statusBadge.className = 'badge bg-warning';
-    statusBadge.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Checking...';
-
-    fetch(`/check_instance_status/${instanceId}`)
-        .then(response => response.json())
-        .then(data => {
-            let badgeClass = data.is_running ? 'bg-success' : 'bg-danger';
-            let status = data.is_running ? 'Running' : 'Stopped';
-            
-            statusBadge.className = `badge ${badgeClass}`;
-            statusBadge.innerHTML = status;
-            
-            // Update last checked time
-            const timeCell = row.querySelector('td:nth-child(4) small');
-            timeCell.textContent = new Date().toLocaleString();
-            
-            // Update tooltip with details if available
-            if (data.details && data.details.length > 0) {
-                statusBadge.setAttribute('data-bs-toggle', 'tooltip');
-                statusBadge.setAttribute('data-bs-placement', 'top');
-                statusBadge.setAttribute('title', data.details.join('\n'));
-                new bootstrap.Tooltip(statusBadge);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            statusBadge.className = 'badge bg-danger';
-            statusBadge.innerHTML = 'Error';
-        });
-}
 
 function markCompleted(id) {
     if (!confirm('Are you sure you want to mark this application as completed?')) {
@@ -412,34 +504,6 @@ function reactivateApplication(id) {
     .catch(error => {
         console.error('Error:', error);
         showAlert('danger', 'Failed to reactivate application: ' + error.message);
-    });
-}
-
-function deleteApplication(id) {
-    if (!confirm('Are you sure you want to delete this application? This action cannot be undone.')) {
-        return;
-    }
-    
-    fetch(`/delete_application/${id}`, { 
-        method: 'DELETE',
-        headers: {
-            'Content-Type': 'application/json'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            showAlert('success', data.message);
-            setTimeout(() => {
-                window.location.reload();
-            }, 1000);
-        } else {
-            showAlert('danger', data.message || 'Failed to delete application');
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showAlert('danger', 'Failed to delete application: ' + error.message);
     });
 }
 
@@ -564,7 +628,7 @@ function saveEditApplication() {
         }
     })
     .catch(error => {
-        console.error('Error:', error);
+        console.error('Save error:', error);
         showAlert('danger', 'Error updating application');
     });
 }
@@ -811,14 +875,6 @@ function showAlert(type, message) {
     alertContainer.innerHTML = '';
     alertContainer.appendChild(alert);
 }
-
-$(document).ready(function() {
-    // Initialize tooltips
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl)
-    });
-});
 
 function confirmDeleteAll() {
     if (confirm('Are you sure you want to delete ALL applications? This cannot be undone.')) {
