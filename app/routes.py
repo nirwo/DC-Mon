@@ -724,3 +724,25 @@ def delete_application(app_id):
             'status': 'error',
             'message': str(e)
         }), 400
+
+@main.route('/delete_instance/<int:instance_id>', methods=['POST'])
+def delete_instance(instance_id):
+    try:
+        instance = ApplicationInstance.query.get_or_404(instance_id)
+        db.session.delete(instance)
+        db.session.commit()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@main.route('/delete_application/<int:app_id>', methods=['POST'])
+def delete_application(app_id):
+    try:
+        app = Application.query.get_or_404(app_id)
+        db.session.delete(app)
+        db.session.commit()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
