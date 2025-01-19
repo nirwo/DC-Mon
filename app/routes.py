@@ -102,183 +102,181 @@ def import_apps():
                         if not team:
                             team = Team(name=team_name)
                             db.session.add(team)
-                        team_cache[team_name] = team
+                            team_cache[team_name] = team
                     
                     # Get or create application
                     app_name = row['name'].strip()
-                    if app_name in app_cache:
-                        app = app_cache[app_name]
+                    app_key = f"{team_name}:{app_name}"
+                    
+                    if app_key in app_cache:
+                        app = app_cache[app_key]
                         if merge_mode == 'skip':
                             skipped += 1
                             continue
                     else:
-                        app = Application.query.filter_by(name=app_name).first()
+                        app = Application.query.filter_by(name=app_name, team_id=team.id).first()
                         if app:
                             if merge_mode == 'skip':
                                 skipped += 1
                                 continue
-                            elif merge_mode == 'merge':
-                                updated += 1
+                            updated += 1
                         else:
-                            app = Application(name=app_name)
+                            app = Application(name=app_name, team=team)
+                            db.session.add(app)
                             imported += 1
-                        app_cache[app_name] = app
+                        app_cache[app_key] = app
                     
-                    # Update application
-                    app.team = team
-                    
-                    # Safely parse shutdown_order
-                    try:
-                        shutdown_order = int(row.get('shutdown_order', 0))
-                        app.shutdown_order = max(0, min(100, shutdown_order))
-                    except (ValueError, TypeError):
-                        app.shutdown_order = 0
+                    # Update application fields
+                    if 'shutdown_order' in row:
+                        app.shutdown_order = int(row['shutdown_order'])
+                    if 'dependencies' in row:
+                        dependencies_to_process.append((app, row['dependencies']))
                     
                     # Create or update instance
                     host = row['host'].strip()
-                    port = row.get('port', '').strip()
-                    webui_url = row.get('webui_url', '').strip()
-                    db_host = row.get('db_host', '').strip()
+                    port = int(row['port']) if 'port' in row and row['port'] else None
+                    webui_url = row['webui_url'].strip() if 'webui_url' in row else None
                     
-                    # Check for existing instance
-                    instance = ApplicationInstance.query.filter_by(
-                        application_id=app.id,
-                        host=host
-                    ).first()
+                    # Determine if host should be treated as database
+                    is_database = any(db_name in host.upper() for db_name in ['DCILDB', 'IL-DB', 'IL-DEV', 'DCILDD'])
                     
+                    instance = ApplicationInstance.query.filter_by(application=app, host=host).first()
                     if instance:
-                        # Update existing instance
-                        instance.port = port if port else None
-                        instance.webui_url = webui_url if webui_url else None
-                        instance.db_host = db_host if db_host else None
+                        instance.port = port
+                        instance.webui_url = webui_url
+                        if is_database:
+                            instance.db_host = host
                     else:
-                        # Create new instance
                         instance = ApplicationInstance(
+                            application=app,
                             host=host,
-                            port=port if port else None,
-                            webui_url=webui_url if webui_url else None,
-                            db_host=db_host if db_host else None
+                            port=port,
+                            webui_url=webui_url,
+                            db_host=host if is_database else None
                         )
-                        app.instances.append(instance)
                         db.session.add(instance)
                     
-                    # Store dependencies
-                    if 'dependencies' in row and row['dependencies']:
-                        dependencies_to_process.append((app, row['dependencies']))
-                    
-                    db.session.add(app)
-                
                 except Exception as e:
-                    errors.append(f"Error processing row {imported + updated + skipped + 1}: {str(e)}")
+                    errors.append(f"Error processing row {i}: {str(e)}")
             
-            # Commit chunk
+            # Commit after each chunk
             try:
                 db.session.commit()
             except Exception as e:
                 db.session.rollback()
-                errors.append(f"Database error: {str(e)}")
-                return jsonify({
-                    'error': 'Database error occurred',
-                    'details': errors
-                }), 500
-        
-        # Process dependencies after all apps are created
-        for app, dependencies in dependencies_to_process:
-            try:
-                dep_names = [d.strip() for d in dependencies.split(';') if d.strip()]
-                for dep_name in dep_names:
-                    dep_app = Application.query.filter_by(name=dep_name).first()
-                    if dep_app:
-                        app.dependencies.append(dep_app)
-                    else:
-                        errors.append(f"Warning: Dependency '{dep_name}' not found for app '{app.name}'")
-            except Exception as e:
-                errors.append(f"Error processing dependencies for {app.name}: {str(e)}")
-        
-        # Final commit for dependencies
-        try:
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            errors.append(f"Database error: {str(e)}")
-            return jsonify({
-                'error': 'Database error occurred',
-                'details': errors
-            }), 500
+                errors.append(f"Error committing chunk {i}: {str(e)}")
         
         return jsonify({
+            'status': 'success',
             'imported': imported,
             'updated': updated,
             'skipped': skipped,
-            'total': total_rows,
-            'errors': errors if errors else None
+            'errors': errors
         })
-    
+        
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 @main.route('/check_status/<int:app_id>')
 def check_status(app_id):
     try:
         app = Application.query.get_or_404(app_id)
-        results = []
+        all_up = True
+        error_messages = []
         
         for instance in app.instances:
-            # Check host status
-            is_running, details = check_host_status(instance.host, instance.port)
-            
-            # Check WebUI if configured
-            webui_status = True
-            webui_message = None
-            if instance.webui_url:
-                try:
-                    response = requests.get(instance.webui_url, timeout=5)
-                    if response.status_code != 200:
-                        webui_status = False
-                        webui_message = f'WebUI returned status code: {response.status_code}'
-                except Exception as e:
-                    webui_status = False
-                    webui_message = f'WebUI error: {str(e)}'
-            
-            status = 'running' if is_running and webui_status else 'stopped'
-            
-            # Combine host and WebUI status messages
-            messages = details
-            if webui_message:
-                messages.append(webui_message)
-            
-            results.append({
-                'host': instance.host,
-                'port': instance.port,
-                'status': status,
-                'details': messages,
-                'webui_url': instance.webui_url
-            })
+            try:
+                # Check if host is reachable
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2)  # 2 second timeout
+                result = sock.connect_ex((instance.host, instance.port or 80))
+                sock.close()
+                
+                if result != 0:
+                    all_up = False
+                    error_messages.append(f"{instance.host}: Port {instance.port} is not accessible")
+                    
+            except socket.gaierror:
+                all_up = False
+                error_messages.append(f"Could not resolve hostname: {instance.host}")
+            except socket.timeout:
+                all_up = False
+                error_messages.append(f"{instance.host}: Connection timed out")
+            except Exception as e:
+                all_up = False
+                error_messages.append(f"{instance.host}: {str(e)}")
         
-        return jsonify({'results': results})
+        # Update application status
+        app.status = 'UP' if all_up else 'DOWN'
+        app.last_checked = datetime.utcnow()
+        db.session.commit()
+        
+        response = {
+            'status': 'success',
+            'app_status': app.status
+        }
+        if error_messages:
+            response['message'] = '; '.join(error_messages)
+            
+        return jsonify(response)
+        
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 @main.route('/check_instance_status/<int:instance_id>')
 def check_instance_status(instance_id):
     try:
         instance = ApplicationInstance.query.get_or_404(instance_id)
-        is_running = ping_host(instance.host)
+        status = 'DOWN'
+        error_message = None
         
+        try:
+            # Check if host is reachable
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)  # 2 second timeout
+            result = sock.connect_ex((instance.host, instance.port or 80))
+            sock.close()
+            
+            if result == 0:
+                status = 'UP'
+            else:
+                error_message = f"Port {instance.port} is not accessible"
+                
+        except socket.gaierror:
+            error_message = f"Could not resolve hostname: {instance.host}"
+        except socket.timeout:
+            error_message = "Connection timed out"
+        except Exception as e:
+            error_message = str(e)
+            
         # Update instance status
-        instance.status = 'running' if is_running else 'stopped'
+        instance.status = status
+        instance.last_checked = datetime.utcnow()
         db.session.commit()
         
-        return jsonify({
+        response = {
             'status': 'success',
-            'is_running': is_running,
-            'details': []
-        })
+            'instance_status': status
+        }
+        if error_message:
+            response['message'] = error_message
+            
+        return jsonify(response)
+        
     except Exception as e:
         db.session.rollback()
-        main.logger.error(f"Error checking status: {str(e)}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 @main.route('/check_all_status')
 def check_all_status():
@@ -290,23 +288,58 @@ def check_all_status():
             app_is_running = True
             
             for instance in app.instances:
-                is_running, details = check_host_status(instance.host, instance.port)
-                
-                # Update instance status
-                instance.status = 'running' if is_running else 'stopped'
-                instance.last_checked = datetime.utcnow()
-                
-                if not is_running:
+                try:
+                    # Check if host is reachable
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(2)  # 2 second timeout
+                    result = sock.connect_ex((instance.host, instance.port or 80))
+                    sock.close()
+                    
+                    if result != 0:
+                        app_is_running = False
+                        app_results.append({
+                            'id': instance.id,
+                            'host': instance.host,
+                            'port': instance.port,
+                            'status': 'DOWN',
+                            'last_checked': instance.last_checked.isoformat() if instance.last_checked else None
+                        })
+                    else:
+                        app_results.append({
+                            'id': instance.id,
+                            'host': instance.host,
+                            'port': instance.port,
+                            'status': 'UP',
+                            'last_checked': instance.last_checked.isoformat() if instance.last_checked else None
+                        })
+                    
+                except socket.gaierror:
                     app_is_running = False
-                
-                app_results.append({
-                    'id': instance.id,
-                    'host': instance.host,
-                    'port': instance.port,
-                    'status': instance.status,
-                    'details': details,
-                    'last_checked': instance.last_checked.isoformat() if instance.last_checked else None
-                })
+                    app_results.append({
+                        'id': instance.id,
+                        'host': instance.host,
+                        'port': instance.port,
+                        'status': 'DOWN',
+                        'last_checked': instance.last_checked.isoformat() if instance.last_checked else None
+                    })
+                except socket.timeout:
+                    app_is_running = False
+                    app_results.append({
+                        'id': instance.id,
+                        'host': instance.host,
+                        'port': instance.port,
+                        'status': 'DOWN',
+                        'last_checked': instance.last_checked.isoformat() if instance.last_checked else None
+                    })
+                except Exception as e:
+                    app_is_running = False
+                    app_results.append({
+                        'id': instance.id,
+                        'host': instance.host,
+                        'port': instance.port,
+                        'status': 'DOWN',
+                        'last_checked': instance.last_checked.isoformat() if instance.last_checked else None
+                    })
             
             # Update application status
             app.state = 'up' if app_is_running else 'down'
@@ -544,19 +577,13 @@ def get_shutdown_sequence(app_id):
                     deps.append(dep)
                     get_dependencies(dep)
             
-            # Sort by shutdown order
             deps.sort(key=lambda x: x.shutdown_order)
+            sequence.extend(deps)
             
             # Add current app if not already in sequence
             if current_app not in sequence:
                 sequence.append(current_app)
-            
-            # Add dependencies after current app
-            for dep in deps:
-                if dep not in sequence:
-                    sequence.append(dep)
         
-        # Start with the target app
         get_dependencies(app)
         
         # Calculate states
