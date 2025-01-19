@@ -154,3 +154,109 @@ class ApplicationInstance:
 
     def __repr__(self):
         return f'<ApplicationInstance {self.host}:{self.port}>'
+
+def init_db():
+    """Initialize the database with required collections and indexes."""
+    db = get_db()
+    
+    # Drop existing collections
+    logger.info("Dropping existing collections...")
+    db.teams.drop()
+    db.applications.drop()
+    db.systems.drop()
+    
+    # Create indexes
+    logger.info("Creating indexes...")
+    db.teams.create_index("name", unique=True)
+    db.systems.create_index("host", unique=True)
+    
+    # Add sample data
+    logger.info("Inserting sample teams...")
+    teams = [
+        {"name": "DevOps"},
+        {"name": "Development"},
+        {"name": "QA"},
+        {"name": "Infrastructure"}
+    ]
+    
+    for team in teams:
+        try:
+            db.teams.insert_one(team)
+            logger.info(f"Added team: {team['name']}")
+        except Exception as e:
+            logger.error(f"Error adding team {team['name']}: {str(e)}")
+            
+    # Add sample applications
+    logger.info("Inserting sample applications...")
+    applications = [
+        {
+            "name": "Web Server",
+            "team_id": str(db.teams.find_one({"name": "DevOps"})["_id"]),
+            "shutdown_order": 2,
+            "dependencies": []
+        },
+        {
+            "name": "Database",
+            "team_id": str(db.teams.find_one({"name": "DevOps"})["_id"]),
+            "shutdown_order": 1,
+            "dependencies": []
+        }
+    ]
+    
+    for app in applications:
+        try:
+            app_id = db.applications.insert_one(app).inserted_id
+            logger.info(f"Added application: {app['name']}")
+            
+            # Add sample systems for each application
+            systems = []
+            if app["name"] == "Web Server":
+                systems = [
+                    {
+                        "name": "Web Server 1",
+                        "application_id": str(app_id),
+                        "host": "webserver1.example.com",
+                        "port": 80,
+                        "status": "unknown",
+                        "last_checked": datetime.utcnow()
+                    },
+                    {
+                        "name": "Web Server 2",
+                        "application_id": str(app_id),
+                        "host": "webserver2.example.com",
+                        "port": 80,
+                        "status": "unknown",
+                        "last_checked": datetime.utcnow()
+                    }
+                ]
+            elif app["name"] == "Database":
+                systems = [
+                    {
+                        "name": "Database Primary",
+                        "application_id": str(app_id),
+                        "host": "db1.example.com",
+                        "port": 5432,
+                        "status": "unknown",
+                        "last_checked": datetime.utcnow()
+                    },
+                    {
+                        "name": "Database Secondary",
+                        "application_id": str(app_id),
+                        "host": "db2.example.com",
+                        "port": 5432,
+                        "status": "unknown",
+                        "last_checked": datetime.utcnow()
+                    }
+                ]
+            
+            for system in systems:
+                try:
+                    db.systems.insert_one(system)
+                    logger.info(f"Added system: {system['name']}")
+                except Exception as e:
+                    logger.error(f"Error adding system {system['name']}: {str(e)}")
+                    
+        except Exception as e:
+            logger.error(f"Error adding application {app['name']}: {str(e)}")
+    
+    logger.info("Database initialization completed successfully")

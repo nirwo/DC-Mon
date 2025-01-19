@@ -188,7 +188,19 @@ def import_data():
         
         db = get_db()
         
+        # First, validate that there are no duplicate hosts
+        hosts = set()
+        rows = []
         for row in csv_reader:
+            host = row.get('host', '').strip()
+            if not host:
+                continue
+            if host in hosts:
+                return jsonify({'success': False, 'error': f'Duplicate host found: {host}'})
+            hosts.add(host)
+            rows.append(row)
+        
+        for row in rows:
             # Get or create team
             team_name = row.get('team', 'Default Team')
             team = db.teams.find_one_and_update(
@@ -201,7 +213,8 @@ def import_data():
             
             # Get or update application
             app_name = row.get('name')
-            if not app_name:
+            host = row.get('host', '').strip()
+            if not app_name or not host:
                 continue
                 
             app_data = {
@@ -219,22 +232,35 @@ def import_data():
             )
             app_id = app['_id']
             
-            # Get or update system
-            system_data = {
-                'name': app_name,
-                'application_id': str(app_id),
-                'host': row.get('host', ''),
-                'port': int(row.get('port')) if row.get('port') else None,
-                'webui_url': row.get('webui_url'),
-                'status': 'unknown',
-                'last_checked': datetime.utcnow()
-            }
-            
-            db.systems.find_one_and_update(
-                {'name': app_name, 'application_id': str(app_id)},
-                {'$set': system_data},
-                upsert=True
-            )
+            # Check if system with this host exists
+            existing_system = db.systems.find_one({'host': host})
+            if existing_system:
+                # Update existing system
+                system_data = {
+                    'name': app_name,
+                    'application_id': str(app_id),
+                    'host': host,
+                    'port': int(row.get('port')) if row.get('port') else None,
+                    'webui_url': row.get('webui_url'),
+                    'status': existing_system.get('status', 'unknown'),
+                    'last_checked': existing_system.get('last_checked', datetime.utcnow())
+                }
+                db.systems.update_one(
+                    {'_id': existing_system['_id']},
+                    {'$set': system_data}
+                )
+            else:
+                # Create new system
+                system_data = {
+                    'name': app_name,
+                    'application_id': str(app_id),
+                    'host': host,
+                    'port': int(row.get('port')) if row.get('port') else None,
+                    'webui_url': row.get('webui_url'),
+                    'status': 'unknown',
+                    'last_checked': datetime.utcnow()
+                }
+                db.systems.insert_one(system_data)
         
         return jsonify({'success': True})
     except Exception as e:
