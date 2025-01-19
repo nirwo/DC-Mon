@@ -7,14 +7,14 @@ class Config:
     SQLALCHEMY_DATABASE_URI = 'sqlite:///app.db'  # Use file-based database
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
-    # Basic SQLAlchemy settings
+    # Optimized SQLAlchemy settings
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
-        'pool_recycle': 3600,
-        'pool_size': 5,
-        'max_overflow': 10,
+        'pool_recycle': 1800,
+        'pool_size': 3,
+        'max_overflow': 5,
         'connect_args': {
-            'timeout': 30,
+            'timeout': 15,
             'check_same_thread': False
         }
     }
