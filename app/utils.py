@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 import socket
 from datetime import datetime
 from typing import Dict, Optional, Any
+import os
 
 def check_port(host: str, port: int, timeout: int = 2) -> bool:
     try:
@@ -116,40 +117,75 @@ def check_db_status(db_host):
     except Exception as e:
         return False, [f"Invalid database host format: {str(e)}"]
 
-def check_application_status(instance):
-    """Check if an application instance is running by checking its host and port."""
-    details = []
-    is_running = True
+def check_application_status(app):
+    if not app.instances:
+        return {"status": "unknown", "message": "No instances configured"}
+    
+    instance_statuses = []
+    for instance in app.instances:
+        status = check_instance_status(instance)
+        instance_statuses.append(status)
+    
+    # If any instance is up, consider the application up
+    if any(s["status"] == "up" for s in instance_statuses):
+        return {"status": "up", "message": "Application is running"}
+    
+    # If all instances are down, consider the application down
+    if all(s["status"] == "down" for s in instance_statuses):
+        return {"status": "down", "message": "Application is not responding"}
+    
+    # Otherwise, return partial or error
+    return {"status": "partial", "message": "Some instances are not responding"}
 
-    # Check if host is reachable
+def check_instance_status(instance):
     try:
-        ping_result = ping(instance.host, timeout=1)
-        if ping_result is None or ping_result is False:
-            details.append(f"Host {instance.host} is unreachable")
-            is_running = False
-    except Exception as e:
-        details.append(f"Error pinging host {instance.host}: {str(e)}")
-        is_running = False
-
-    # If port is specified, check if it's open
-    if instance.port and is_running:
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1)
-            result = sock.connect_ex((instance.host, instance.port))
-            sock.close()
+        if not instance.host:
+            return {"status": "unknown", "message": "No host specified"}
+        
+        # If port is specified, try web check first
+        if instance.port:
+            try:
+                response = requests.get(f"http://{instance.host}:{instance.port}", timeout=2)
+                if response.status_code == 200:
+                    return {"status": "up", "message": "Service is responding"}
+                return {"status": "down", "message": f"Service returned status {response.status_code}"}
+            except requests.RequestException:
+                # If web check fails, fallback to ping
+                return ping_check(instance.host)
+        
+        # If webUI is specified but no port, try webUI
+        elif instance.webui:
+            try:
+                response = requests.get(instance.webui, timeout=2)
+                if response.status_code == 200:
+                    return {"status": "up", "message": "WebUI is responding"}
+                return {"status": "down", "message": f"WebUI returned status {response.status_code}"}
+            except requests.RequestException:
+                # If webUI check fails, fallback to ping
+                return ping_check(instance.host)
+        
+        # If no port or webUI, just do ping check
+        else:
+            return ping_check(instance.host)
             
-            if result != 0:
-                details.append(f"Port {instance.port} is not open")
-                is_running = False
-        except Exception as e:
-            details.append(f"Error checking port {instance.port}: {str(e)}")
-            is_running = False
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
-    if not details:
-        details.append("All checks passed")
-
-    return is_running, details
+def ping_check(host):
+    """Perform a ping check on the host"""
+    try:
+        # Try to establish a TCP connection to check if host is reachable
+        socket.create_connection((host, 22), timeout=2)
+        return {"status": "up", "message": "Host is responding to ping"}
+    except (socket.timeout, socket.error):
+        try:
+            # Fallback to ICMP ping if TCP fails
+            response = os.system(f"ping -c 1 -W 2 {host} > /dev/null 2>&1")
+            if response == 0:
+                return {"status": "up", "message": "Host is responding to ping"}
+            return {"status": "down", "message": "Host is not responding to ping"}
+        except:
+            return {"status": "down", "message": "Host is not responding"}
 
 def get_application_status(app) -> Dict[str, Any]:
     status = {
