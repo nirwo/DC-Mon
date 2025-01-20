@@ -201,6 +201,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div id="importStatus"></div>
                 <form id="importForm">
                     <div class="mb-3">
                         <label class="form-label">CSV File</label>
@@ -211,6 +212,52 @@
                     </div>
                     <button type="submit" class="btn btn-primary">Import</button>
                 </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- CSV Mapping UI -->
+<div class="modal fade" id="csvMappingModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">CSV Mapping</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="csvMappingContainer">
+                    <h2>Import Applications</h2>
+                    
+                    <!-- Step 1: File Upload -->
+                    <div id="step1" class="mb-4">
+                        <form id="uploadForm" enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <label for="csvFile" class="form-label">Select CSV File</label>
+                                <input type="file" class="form-control" id="csvFile" name="file" accept=".csv" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Upload and Preview</button>
+                        </form>
+                    </div>
+
+                    <!-- Step 2: Column Mapping -->
+                    <div id="step2" class="hidden">
+                        <h4>Map CSV Columns</h4>
+                        <div class="alert alert-info">
+                            Please map your CSV columns to the required fields. Required fields are marked with *.
+                        </div>
+                        <div id="columnMapping" class="mb-3">
+                            <!-- Will be populated dynamically -->
+                        </div>
+                        <button id="importButton" class="btn btn-success">Import Data</button>
+                        <button id="backButton" class="btn btn-secondary">Back</button>
+                    </div>
+
+                    <!-- Results -->
+                    <div id="results" class="mt-4">
+                        <!-- Import results will be shown here -->
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -234,30 +281,6 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 <button type="button" class="btn btn-primary" onclick="updateTeam()">Save changes</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="importModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Import Data</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div id="importStatus"></div>
-                <form id="importForm">
-                    <div class="mb-3">
-                        <label for="file" class="form-label">CSV File</label>
-                        <input type="file" class="form-control" id="file" accept=".csv" required>
-                        <small class="text-muted">
-                            File should have columns: team, application, system, host, port (optional), webui_url (optional)
-                        </small>
-                    </div>
-                    <button type="submit" class="btn btn-primary">Import</button>
-                </form>
             </div>
         </div>
     </div>
@@ -482,6 +505,9 @@
     align-items: center;
     gap: 5px;
 }
+
+.hidden { display: none; }
+.mapping-row { margin-bottom: 10px; }
 </style>
 
 <script>
@@ -1022,6 +1048,126 @@ document.addEventListener('DOMContentLoaded', function() {
     if (importForm) {
         importForm.addEventListener('submit', handleImport);
     }
+});
+
+// CSV Mapping UI
+let csvHeaders = [];
+let previewData = [];
+
+document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData();
+    formData.append('file', document.getElementById('csvFile').files[0]);
+
+    try {
+        const response = await fetch('/preview_csv', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        csvHeaders = data.headers;
+        previewData = data.preview;
+        showColumnMapping(data.headers, data.required_fields);
+        
+        document.getElementById('step1').classList.add('hidden');
+        document.getElementById('step2').classList.remove('hidden');
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+});
+
+function showColumnMapping(headers, requiredFields) {
+    const mappingDiv = document.getElementById('columnMapping');
+    mappingDiv.innerHTML = '';
+
+    requiredFields.forEach(field => {
+        const row = document.createElement('div');
+        row.className = 'mapping-row';
+        
+        const select = document.createElement('select');
+        select.className = 'form-select';
+        select.id = `map_${field}`;
+        
+        // Add empty option
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = `Select column for ${field}${requiredFields.includes(field) ? ' *' : ''}`;
+        select.appendChild(emptyOption);
+        
+        // Add CSV headers as options
+        headers.forEach(header => {
+            const option = document.createElement('option');
+            option.value = header;
+            option.textContent = header;
+            // Auto-select if header matches field name
+            if (header.toLowerCase() === field.toLowerCase()) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        });
+
+        row.appendChild(select);
+        mappingDiv.appendChild(row);
+    });
+}
+
+document.getElementById('importButton').addEventListener('click', async () => {
+    const mapping = {};
+    const requiredFields = ['name', 'team', 'host', 'port'];
+    
+    // Collect mapping
+    requiredFields.forEach(field => {
+        const select = document.getElementById(`map_${field}`);
+        mapping[field] = select.value;
+        
+        if (requiredFields.includes(field) && !select.value) {
+            throw new Error(`Please map the required field: ${field}`);
+        }
+    });
+
+    try {
+        const response = await fetch('/import_apps', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                file_id: document.getElementById('csvFile').files[0].name,
+                mapping: mapping
+            })
+        });
+        
+        const result = await response.json();
+        if (result.error) {
+            throw new Error(result.error);
+        }
+
+        document.getElementById('results').innerHTML = `
+            <div class="alert alert-success">
+                Successfully imported ${result.imported} applications.
+                ${result.skipped > 0 ? `Skipped ${result.skipped} entries.` : ''}
+            </div>`;
+        
+        // Reset form
+        document.getElementById('step2').classList.add('hidden');
+        document.getElementById('step1').classList.remove('hidden');
+        document.getElementById('uploadForm').reset();
+    } catch (error) {
+        document.getElementById('results').innerHTML = `
+            <div class="alert alert-danger">
+                Error: ${error.message}
+            </div>`;
+    }
+});
+
+document.getElementById('backButton').addEventListener('click', () => {
+    document.getElementById('step2').classList.add('hidden');
+    document.getElementById('step1').classList.remove('hidden');
 });
 </script>
 {% endblock %}

@@ -136,8 +136,8 @@ def delete_system(system_id):
         logger.error(f"Error deleting system: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@main.route('/import_apps', methods=['POST'])
-def import_data():
+@main.route('/preview_csv', methods=['POST'])
+def preview_csv():
     try:
         if 'file' not in request.files:
             return jsonify({"error": "No file provided"}), 400
@@ -146,41 +146,91 @@ def import_data():
         if not file.filename.endswith('.csv'):
             return jsonify({"error": "Invalid file format. Please upload a CSV file"}), 400
         
+        # Create a temporary file to store the uploaded content
+        with tempfile.NamedTemporaryFile(mode='wb', delete=False) as temp_file:
+            file.save(temp_file.name)
+            
+            # Read CSV headers and preview data
+            with open(temp_file.name, 'r') as csvfile:
+                reader = csv.DictReader(csvfile)
+                headers = reader.fieldnames
+                preview = []
+                for i, row in enumerate(reader):
+                    if i >= 5:  # Only show first 5 rows
+                        break
+                    preview.append(row)
+            
+            os.unlink(temp_file.name)
+            
+            required_fields = ['name', 'team', 'host', 'port']
+            optional_fields = ['webui_url', 'db_host', 'description']
+            
+            return jsonify({
+                "headers": headers,
+                "preview": preview,
+                "required_fields": required_fields,
+                "optional_fields": optional_fields
+            })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@main.route('/import_apps', methods=['POST'])
+def import_data():
+    try:
+        data = request.json
+        if not data or 'mapping' not in data:
+            return jsonify({"error": "No mapping provided"}), 400
+        
+        mapping = data['mapping']
+        required_fields = ['name', 'team', 'host', 'port']
+        
+        # Validate required fields
+        for field in required_fields:
+            if field not in mapping or not mapping[field]:
+                return jsonify({"error": f"Missing required field mapping: {field}"}), 400
+        
         imported_count = 0
         skipped_count = 0
         
+        # Create a temporary file to store the uploaded content
         with tempfile.NamedTemporaryFile(mode='wb', delete=False) as temp_file:
+            file = request.files['file']
             file.save(temp_file.name)
             
             with open(temp_file.name, 'r') as csvfile:
                 reader = csv.DictReader(csvfile)
                 for row in reader:
                     try:
-                        team = Team.query.filter_by(name=row['team']).first()
+                        # Map CSV columns to model fields
+                        team_name = row[mapping['team']]
+                        team = Team.query.filter_by(name=team_name).first()
                         if not team:
-                            team = Team(name=row['team'])
+                            team = Team(name=team_name)
                             db.session.add(team)
                             db.session.flush()
                         
                         app = Application(
-                            name=row['name'],
+                            name=row[mapping['name']],
                             team_id=team.id,
-                            webui_url=row.get('webui_url')
+                            webui_url=row.get(mapping.get('webui_url', ''))
                         )
                         db.session.add(app)
                         db.session.flush()
                         
                         instance = ApplicationInstance(
                             application_id=app.id,
-                            host=row['host'],
-                            port=int(row['port']) if row.get('port') else None,
-                            webui_url=row.get('webui_url'),
-                            db_host=row.get('db_host')
+                            host=row[mapping['host']],
+                            port=int(row[mapping['port']]) if row[mapping['port']] else None,
+                            webui_url=row.get(mapping.get('webui_url', '')),
+                            db_host=row.get(mapping.get('db_host', '')),
+                            status='running'
                         )
                         db.session.add(instance)
                         imported_count += 1
-                    except Exception:
+                    except Exception as e:
                         skipped_count += 1
+                        current_app.logger.error(f"Error importing row: {str(e)}")
+                        continue
             
             db.session.commit()
             os.unlink(temp_file.name)
