@@ -2,6 +2,7 @@ import os
 import time
 from pymongo import MongoClient
 from flask import current_app
+from mongoengine import connect, disconnect
 
 def get_db():
     """Get MongoDB database instance."""
@@ -14,6 +15,13 @@ def init_db(max_retries=5, retry_delay=5):
     retry_count = 0
     while retry_count < max_retries:
         try:
+            # Close any existing connections
+            disconnect()
+            
+            # Connect using MongoEngine
+            mongo_uri = os.environ.get('MONGODB_URI', 'mongodb://mongo:27017/shutdown_manager')
+            connect(host=mongo_uri)
+            
             db = get_db()
             # Test MongoDB connection
             db.command('ping')
