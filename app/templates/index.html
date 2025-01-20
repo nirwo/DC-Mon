@@ -504,12 +504,13 @@
             </div>
             <div class="modal-body">
                 <div id="importStatus"></div>
-                <form id="importForm">
+                <form id="importForm" enctype="multipart/form-data">
                     <div class="mb-3">
                         <label for="file" class="form-label">CSV File</label>
-                        <input type="file" class="form-control" id="file" accept=".csv" required>
+                        <input type="file" class="form-control" id="file" name="file" accept=".csv" required>
                         <small class="text-muted">
-                            File should have columns: team, application, system, host, port (optional), webui_url (optional)
+                            Required columns: team, application, system, host<br>
+                            Optional: port, webui_url
                         </small>
                     </div>
                     <button type="submit" class="btn btn-primary">Import</button>
@@ -1091,10 +1092,7 @@ function toggleSystemStatus(systemId, element) {
 
 function updateSystemsList() {
     fetch('/api/systems')
-        .then(response => {
-            if (!response.ok) throw new Error(response.statusText);
-            return response.json();
-        })
+        .then(response => response.json())
         .then(systems => {
             const runningSystems = document.getElementById('running-systems');
             const stoppedSystems = document.getElementById('stopped-systems');
@@ -1320,92 +1318,46 @@ function handleImport(event) {
     }
 
     const file = fileInput.files[0];
-    if (!file.name.endsWith('.csv')) {
-        showAlert('danger', 'Please select a CSV file');
-        return;
-    }
-
     formData.append('file', file);
     
-    // Show loading state
     showAlert('info', 'Importing data...', 0);
-    if (importStatus) {
-        importStatus.innerHTML = `
-            <div class="alert alert-info">
-                <div class="spinner-border spinner-border-sm me-2" role="status">
-                    <span class="visually-hidden">Loading...</span>
-                </div>
-                Importing ${file.name}...
-            </div>
-        `;
-    }
-
+    
     fetch('/import', {
         method: 'POST',
         body: formData
     })
     .then(response => response.json())
     .then(data => {
-        // Clear loading message
         document.querySelectorAll('.alert-info').forEach(alert => {
             bootstrap.Alert.getInstance(alert)?.close();
         });
 
         if (data.success) {
-            showAlert('success', `Successfully imported data from ${file.name}`);
-            
-            // Show details if there are any
-            if (data.details) {
-                let details = `<div class="mt-2"><strong>Imported:</strong><ul>`;
-                if (data.details.teams) details += `<li>${data.details.teams} teams</li>`;
-                if (data.details.applications) details += `<li>${data.details.applications} applications</li>`;
-                if (data.details.systems) details += `<li>${data.details.systems} systems</li>`;
-                details += '</ul></div>';
-                
-                if (importStatus) {
-                    importStatus.innerHTML = `
-                        <div class="alert alert-success">
-                            <h6>Import Successful!</h6>
-                            ${details}
-                        </div>
-                    `;
-                }
-            }
-            
-            // Refresh lists
+            showAlert('success', data.message);
             updateTeamsList();
             updateSystemsList();
-            
         } else {
-            showAlert('danger', `Import failed: ${data.error}`);
-            if (importStatus) {
-                importStatus.innerHTML = `
-                    <div class="alert alert-danger">
-                        <h6>Import Failed</h6>
-                        <div class="mt-2">${data.error}</div>
-                    </div>
-                `;
+            showAlert('danger', data.error);
+            if (data.errors && data.errors.length > 0) {
+                data.errors.forEach(error => {
+                    showAlert('warning', error);
+                });
             }
         }
     })
     .catch(error => {
         console.error('Import error:', error);
         showAlert('danger', 'Failed to import file');
-        if (importStatus) {
-            importStatus.innerHTML = `
-                <div class="alert alert-danger">
-                    <h6>Import Error</h6>
-                    <div class="mt-2">An unexpected error occurred during import.</div>
-                </div>
-            `;
-        }
     })
     .finally(() => {
         fileInput.value = '';
+        const importModal = bootstrap.Modal.getInstance(document.getElementById('importModal'));
+        if (importModal) {
+            importModal.hide();
+        }
     });
 }
 
-// Add import form listener
 document.addEventListener('DOMContentLoaded', function() {
     const importForm = document.getElementById('importForm');
     if (importForm) {

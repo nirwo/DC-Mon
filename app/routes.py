@@ -181,88 +181,92 @@ def check_status(instance_id):
 def import_data():
     try:
         if 'file' not in request.files:
-            return jsonify({'success': False, 'error': 'No file uploaded'}), 400
-        
+            return jsonify({'success': False, 'error': 'No file provided'})
+            
         file = request.files['file']
+        if not file or not file.filename:
+            return jsonify({'success': False, 'error': 'No file selected'})
+            
         if not file.filename.endswith('.csv'):
-            return jsonify({'success': False, 'error': 'File must be a CSV'}), 400
-        
-        # Read CSV content
+            return jsonify({'success': False, 'error': 'Only CSV files are supported'})
+            
         content = file.read().decode('utf-8')
-        csv_data = list(csv.DictReader(StringIO(content)))
-        
-        if not csv_data:
-            return jsonify({'success': False, 'error': 'CSV file is empty'}), 400
+        csv_reader = csv.DictReader(StringIO(content))
         
         db = get_db()
         imported = {'teams': 0, 'applications': 0, 'systems': 0}
+        errors = []
         
-        # Process each row
-        for row in csv_data:
+        for row in csv_reader:
             try:
-                # Create or get team
-                team_name = row.get('team')
+                # Create team
+                team_name = row.get('team', '').strip()
                 if team_name:
-                    team = db.teams.find_one({'name': team_name})
-                    if not team:
-                        team_id = db.teams.insert_one({
-                            'name': team_name,
-                            'description': row.get('team_description', '')
-                        }).inserted_id
-                        imported['teams'] += 1
-                    else:
-                        team_id = team['_id']
+                    team = db.teams.find_one_and_update(
+                        {'name': team_name},
+                        {'$setOnInsert': {'name': team_name}},
+                        upsert=True,
+                        return_document=True
+                    )
+                    team_id = str(team['_id'])
+                    imported['teams'] += 1
+                else:
+                    team_id = None
                 
-                # Create or get application
-                app_name = row.get('application')
+                # Create application
+                app_name = row.get('application', '').strip()
                 if app_name:
-                    app = db.applications.find_one({
-                        'name': app_name,
-                        'team_id': str(team_id) if team_name else None
-                    })
-                    if not app:
-                        app_id = db.applications.insert_one({
+                    app = db.applications.find_one_and_update(
+                        {'name': app_name, 'team_id': team_id},
+                        {'$setOnInsert': {
                             'name': app_name,
-                            'description': row.get('application_description', ''),
-                            'team_id': str(team_id) if team_name else None
-                        }).inserted_id
-                        imported['applications'] += 1
-                    else:
-                        app_id = app['_id']
+                            'team_id': team_id
+                        }},
+                        upsert=True,
+                        return_document=True
+                    )
+                    app_id = str(app['_id'])
+                    imported['applications'] += 1
+                else:
+                    app_id = None
                 
                 # Create system
-                system_name = row.get('system')
-                if system_name:
-                    existing_system = db.systems.find_one({
-                        'name': system_name,
-                        'application_id': str(app_id) if app_name else None
-                    })
-                    
-                    if not existing_system:
-                        db.systems.insert_one({
-                            'name': system_name,
-                            'host': row.get('host', ''),
-                            'port': int(row['port']) if row.get('port') else None,
-                            'webui_url': row.get('webui_url', ''),
-                            'application_id': str(app_id) if app_name else None,
+                host = row.get('host', '').strip()
+                if host:
+                    system = db.systems.find_one_and_update(
+                        {'host': host, 'application_id': app_id},
+                        {'$set': {
+                            'name': row.get('system', host).strip(),
+                            'host': host,
+                            'port': int(row['port']) if row.get('port', '').strip().isdigit() else None,
+                            'webui_url': row.get('webui_url', '').strip() or None,
+                            'application_id': app_id,
                             'status': 'unknown',
                             'last_checked': None
-                        })
-                        imported['systems'] += 1
-            
+                        }},
+                        upsert=True
+                    )
+                    imported['systems'] += 1
+                
             except Exception as e:
-                logger.error(f"Error processing row: {str(e)}")
-                continue
+                errors.append(f"Error in row {csv_reader.line_num}: {str(e)}")
+        
+        if not any(imported.values()):
+            return jsonify({
+                'success': False,
+                'error': 'No data was imported',
+                'errors': errors
+            })
         
         return jsonify({
             'success': True,
             'details': imported,
-            'message': f"Imported {imported['teams']} teams, {imported['applications']} applications, {imported['systems']} systems"
+            'message': f"Imported {imported['teams']} teams, {imported['applications']} applications, {imported['systems']} systems",
+            'errors': errors if errors else None
         })
         
     except Exception as e:
-        logger.error(f"Import error: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)})
 
 @main.route('/api/systems/<system_id>/status', methods=['GET'])
 def get_system_status(system_id):
