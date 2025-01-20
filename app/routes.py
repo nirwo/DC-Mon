@@ -177,64 +177,59 @@ def preview_csv():
 @main.route('/import_apps', methods=['POST'])
 def import_data():
     try:
-        data = request.json
-        if not data or 'mapping' not in data:
-            return jsonify({"error": "No mapping provided"}), 400
+        if 'file' not in request.files:
+            return jsonify({"error": "No file provided"}), 400
         
-        mapping = data['mapping']
-        required_fields = ['name', 'team', 'host', 'port']
-        
-        # Validate required fields
-        for field in required_fields:
-            if field not in mapping or not mapping[field]:
-                return jsonify({"error": f"Missing required field mapping: {field}"}), 400
+        file = request.files['file']
+        if not file.filename.endswith('.csv'):
+            return jsonify({"error": "Invalid file format. Please upload a CSV file"}), 400
         
         imported_count = 0
         skipped_count = 0
         
         # Create a temporary file to store the uploaded content
         with tempfile.NamedTemporaryFile(mode='wb', delete=False) as temp_file:
-            file = request.files['file']
             file.save(temp_file.name)
             
             with open(temp_file.name, 'r') as csvfile:
                 reader = csv.DictReader(csvfile)
                 for row in reader:
                     try:
-                        # Map CSV columns to model fields
-                        team_name = row[mapping['team']]
-                        team = Team.query.filter_by(name=team_name).first()
+                        # Get or create team
+                        team = Team.query.filter_by(name=row['team']).first()
                         if not team:
-                            team = Team(name=team_name)
+                            team = Team(name=row['team'])
                             db.session.add(team)
                             db.session.flush()
                         
+                        # Create application
                         app = Application(
-                            name=row[mapping['name']],
+                            name=row['name'],
                             team_id=team.id,
-                            webui_url=row.get(mapping.get('webui_url', ''))
+                            webui_url=row.get('webui_url')
                         )
                         db.session.add(app)
                         db.session.flush()
                         
+                        # Create instance
                         instance = ApplicationInstance(
                             application_id=app.id,
-                            host=row[mapping['host']],
-                            port=int(row[mapping['port']]) if row[mapping['port']] else None,
-                            webui_url=row.get(mapping.get('webui_url', '')),
-                            db_host=row.get(mapping.get('db_host', '')),
+                            host=row['host'],
+                            port=int(row['port']) if row.get('port') else None,
+                            webui_url=row.get('webui_url'),
+                            db_host=row.get('db_host'),
                             status='running'
                         )
                         db.session.add(instance)
                         imported_count += 1
                     except Exception as e:
-                        skipped_count += 1
                         current_app.logger.error(f"Error importing row: {str(e)}")
+                        skipped_count += 1
                         continue
             
             db.session.commit()
             os.unlink(temp_file.name)
-            
+        
         return jsonify({
             "status": "success",
             "imported": imported_count,

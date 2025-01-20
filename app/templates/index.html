@@ -1117,29 +1117,18 @@ function showColumnMapping(headers, requiredFields) {
 }
 
 document.getElementById('importButton').addEventListener('click', async () => {
-    const mapping = {};
-    const requiredFields = ['name', 'team', 'host', 'port'];
-    
-    // Collect mapping
-    requiredFields.forEach(field => {
-        const select = document.getElementById(`map_${field}`);
-        mapping[field] = select.value;
-        
-        if (requiredFields.includes(field) && !select.value) {
-            throw new Error(`Please map the required field: ${field}`);
-        }
-    });
+    const formData = new FormData();
+    const file = document.getElementById('csvFile').files[0];
+    if (!file) {
+        showAlert('error', 'Please select a file');
+        return;
+    }
+    formData.append('file', file);
 
     try {
         const response = await fetch('/import_apps', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                file_id: document.getElementById('csvFile').files[0].name,
-                mapping: mapping
-            })
+            body: formData
         });
         
         const result = await response.json();
@@ -1147,21 +1136,14 @@ document.getElementById('importButton').addEventListener('click', async () => {
             throw new Error(result.error);
         }
 
-        document.getElementById('results').innerHTML = `
-            <div class="alert alert-success">
-                Successfully imported ${result.imported} applications.
-                ${result.skipped > 0 ? `Skipped ${result.skipped} entries.` : ''}
-            </div>`;
+        showAlert('success', `Successfully imported ${result.imported} applications. ${result.skipped > 0 ? `Skipped ${result.skipped} entries.` : ''}`);
         
-        // Reset form
-        document.getElementById('step2').classList.add('hidden');
-        document.getElementById('step1').classList.remove('hidden');
-        document.getElementById('uploadForm').reset();
+        // Reset form and refresh data
+        document.getElementById('importForm').reset();
+        $('#importModal').modal('hide');
+        loadData();
     } catch (error) {
-        document.getElementById('results').innerHTML = `
-            <div class="alert alert-danger">
-                Error: ${error.message}
-            </div>`;
+        showAlert('error', `Import failed: ${error.message}`);
     }
 });
 
