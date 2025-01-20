@@ -1,8 +1,8 @@
 import os
 import logging
 from datetime import datetime
-from mongoengine import connect, disconnect
-from app.models import Team, Application, System, ApplicationInstance
+from app import create_app, db
+from app.models import Team, Application, ApplicationInstance
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -10,107 +10,95 @@ logger = logging.getLogger(__name__)
 
 def init_db():
     """Initialize the database with required collections and indexes."""
-    # Setup MongoDB connection
-    mongo_uri = os.environ.get('MONGODB_URI', 'mongodb://mongo:27017/shutdown_manager')
-    disconnect()  # Disconnect any existing connections
-    connect(host=mongo_uri)
-    
-    logger.info("Dropping existing collections...")
-    Team.drop_collection()
-    Application.drop_collection()
-    System.drop_collection()
-    ApplicationInstance.drop_collection()
-    
-    logger.info("Creating indexes...")
-    
-    # Insert sample teams
-    logger.info("Inserting sample teams...")
-    teams = [
-        {"name": "DevOps"},
-        {"name": "Development"},
-        {"name": "QA"},
-        {"name": "Infrastructure"}
-    ]
-    
-    team_objects = {}
-    for team_data in teams:
-        team = Team(**team_data).save()
-        team_objects[team.name] = team
-        logger.info(f"Added team: {team.name}")
-    
-    # Insert sample applications
-    logger.info("Inserting sample applications...")
-    applications = [
-        {
-            "name": "Web Server",
-            "team": team_objects["DevOps"],
-            "description": "Web Server Application",
-            "webui_url": "http://example.com"
-        },
-        {
-            "name": "Database",
-            "team": team_objects["DevOps"],
-            "description": "Database Application",
-            "webui_url": "http://example.com"
-        }
-    ]
-    
-    app_objects = {}
-    for app_data in applications:
-        app = Application(**app_data).save()
-        app_objects[app.name] = app
-        logger.info(f"Added application: {app.name}")
-    
-    # Insert sample systems
-    logger.info("Inserting sample systems...")
-    systems = [
-        {
-            "name": "Web Server 1",
-            "application": app_objects["Web Server"],
-            "host": "webserver1.example.com",
-            "port": 80,
-            "status": "unknown",
-            "webui_url": "http://webserver1.example.com"
-        },
-        {
-            "name": "Web Server 2",
-            "application": app_objects["Web Server"],
-            "host": "webserver2.example.com",
-            "port": 80,
-            "status": "unknown",
-            "webui_url": "http://webserver2.example.com"
-        },
-        {
-            "name": "Database Primary",
-            "application": app_objects["Database"],
-            "host": "db1.example.com",
-            "port": 5432,
-            "status": "unknown",
-            "webui_url": "http://db1.example.com:5432"
-        },
-        {
-            "name": "Database Secondary",
-            "application": app_objects["Database"],
-            "host": "db2.example.com",
-            "port": 5432,
-            "status": "unknown",
-            "webui_url": "http://db2.example.com:5432"
-        }
-    ]
-    
-    for system_data in systems:
-        system = System(**system_data).save()
-        app = system.application
-        if system not in app.systems:
-            app.systems.append(system)
-            app.save()
-        logger.info(f"Added system: {system.name}")
-    
-    logger.info("Database initialization completed successfully")
+    app = create_app()
+    with app.app_context():
+        logger.info("Dropping existing tables...")
+        db.drop_all()
+        
+        logger.info("Creating tables...")
+        db.create_all()
+        
+        # Insert sample teams
+        logger.info("Inserting sample teams...")
+        teams = [
+            Team(name="DevOps"),
+            Team(name="Development"),
+            Team(name="QA"),
+        ]
+        db.session.add_all(teams)
+        db.session.commit()
+        
+        # Insert sample applications
+        logger.info("Inserting sample applications...")
+        devops_team = Team.query.filter_by(name="DevOps").first()
+        dev_team = Team.query.filter_by(name="Development").first()
+        qa_team = Team.query.filter_by(name="QA").first()
+        
+        applications = [
+            Application(name="Monitoring System", team_id=devops_team.id),
+            Application(name="CI/CD Pipeline", team_id=devops_team.id),
+            Application(name="Frontend App", team_id=dev_team.id),
+            Application(name="Backend API", team_id=dev_team.id),
+            Application(name="Test Framework", team_id=qa_team.id),
+        ]
+        db.session.add_all(applications)
+        db.session.commit()
+        
+        # Insert sample application instances
+        logger.info("Inserting sample application instances...")
+        monitoring = Application.query.filter_by(name="Monitoring System").first()
+        cicd = Application.query.filter_by(name="CI/CD Pipeline").first()
+        frontend = Application.query.filter_by(name="Frontend App").first()
+        backend = Application.query.filter_by(name="Backend API").first()
+        test_framework = Application.query.filter_by(name="Test Framework").first()
+        
+        instances = [
+            ApplicationInstance(
+                application_id=monitoring.id,
+                host="monitor1.example.com",
+                port=8080,
+                webui_url="http://monitor1.example.com:8080",
+                db_host="db1.example.com",
+                status="running"
+            ),
+            ApplicationInstance(
+                application_id=cicd.id,
+                host="jenkins.example.com",
+                port=8080,
+                webui_url="http://jenkins.example.com:8080",
+                status="running"
+            ),
+            ApplicationInstance(
+                application_id=frontend.id,
+                host="web1.example.com",
+                port=3000,
+                webui_url="http://web1.example.com:3000",
+                status="running"
+            ),
+            ApplicationInstance(
+                application_id=backend.id,
+                host="api1.example.com",
+                port=5000,
+                webui_url="http://api1.example.com:5000",
+                db_host="db2.example.com",
+                status="running"
+            ),
+            ApplicationInstance(
+                application_id=test_framework.id,
+                host="test1.example.com",
+                port=4444,
+                webui_url="http://test1.example.com:4444",
+                status="running"
+            ),
+        ]
+        db.session.add_all(instances)
+        db.session.commit()
+        
+        logger.info("Database initialization completed successfully!")
 
 if __name__ == "__main__":
     try:
         init_db()
     except Exception as e:
-        logger.error(f"Error initializing database: {e}")
+        logger.error(f"Error initializing database: {str(e)}")
         raise

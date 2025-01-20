@@ -1,7 +1,10 @@
 from flask import Blueprint, render_template, jsonify, request, current_app
-from app.models import Team, Application, System
+from app.models import Team, Application, System, ApplicationInstance
+from app import db
 import logging
 import csv
+import os
+import tempfile
 
 logger = logging.getLogger(__name__)
 main = Blueprint('main', __name__)
@@ -13,22 +16,21 @@ def index():
 @main.route('/api/teams', methods=['GET'])
 def get_teams():
     try:
-        teams = Team.objects.all()
+        teams = Team.query.all()
         return jsonify([team.to_dict() for team in teams])
     except Exception as e:
         logger.error(f"Error getting teams: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@main.route('/api/teams/<team_id>', methods=['DELETE'])
+@main.route('/api/teams/<int:team_id>', methods=['DELETE'])
 def delete_team(team_id):
     try:
-        team = Team.objects.get(id=team_id)
+        team = Team.query.get_or_404(team_id)
         # Delete all associated applications first
-        Application.objects(team=team).delete()
-        team.delete()
+        Application.query.filter_by(team_id=team_id).delete()
+        db.session.delete(team)
+        db.session.commit()
         return jsonify({'message': 'Team deleted successfully'})
-    except Team.DoesNotExist:
-        return jsonify({'error': 'Team not found'}), 404
     except Exception as e:
         logger.error(f"Error deleting team: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -36,122 +38,179 @@ def delete_team(team_id):
 @main.route('/api/applications', methods=['GET'])
 def get_applications():
     try:
-        applications = Application.objects.all()
+        applications = Application.query.all()
         return jsonify([app.to_dict() for app in applications])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@main.route('/api/applications/<app_id>', methods=['DELETE'])
+@main.route('/api/applications/<int:app_id>', methods=['DELETE'])
 def delete_application(app_id):
     try:
-        app = Application.objects.get(id=app_id)
-        # Delete all associated systems first
-        System.objects(application=app).delete()
-        app.delete()
+        app = Application.query.get_or_404(app_id)
+        # Delete all associated instances first
+        ApplicationInstance.query.filter_by(application_id=app_id).delete()
+        db.session.delete(app)
+        db.session.commit()
         return jsonify({'message': 'Application deleted successfully'})
-    except Application.DoesNotExist:
-        return jsonify({'error': 'Application not found'}), 404
     except Exception as e:
         logger.error(f"Error deleting application: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@main.route('/api/applications/<app_id>/systems', methods=['GET'])
+@main.route('/api/applications/<int:app_id>/systems', methods=['GET'])
 def get_application_systems(app_id):
     try:
-        app = Application.objects.get(id=app_id)
+        app = Application.query.get_or_404(app_id)
         return jsonify([system.to_dict() for system in app.systems])
-    except Application.DoesNotExist:
-        return jsonify({"error": "Application not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-@main.route('/api/applications/<app_id>/test', methods=['POST'])
+@main.route('/check_status/<int:app_id>', methods=['GET'])
 def test_application(app_id):
     try:
-        app = Application.objects.get(id=app_id)
-        for system in app.systems:
-            system.status = "running"
-            system.save()
-        return jsonify({"message": "Test started successfully"})
-    except Application.DoesNotExist:
-        return jsonify({"error": "Application not found"}), 404
+        app = Application.query.get_or_404(app_id)
+        instances = ApplicationInstance.query.filter_by(application_id=app_id).all()
+        results = []
+        
+        for instance in instances:
+            instance.status = 'running'
+            db.session.add(instance)
+            results.append({
+                'id': instance.id,
+                'status': instance.status,
+                'host': instance.host,
+                'port': instance.port
+            })
+        
+        db.session.commit()
+        return jsonify({
+            'status': 'success',
+            'message': 'Status check completed',
+            'results': results
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-@main.route('/api/applications/<app_id>/state', methods=['PUT'])
+@main.route('/update_application/<int:app_id>', methods=['POST'])
 def update_app_state(app_id):
     try:
-        data = request.get_json()
-        app = Application.objects.get(id=app_id)
-        app.state = data.get('state', 'notStarted')
-        app.save()
-        return jsonify({"message": "State updated successfully"})
-    except Application.DoesNotExist:
-        return jsonify({"error": "Application not found"}), 404
+        data = request.json
+        app = Application.query.get_or_404(app_id)
+        
+        # Update application fields
+        app.name = data.get('name', app.name)
+        app.team_id = data.get('team_id', app.team_id)
+        
+        # Update instances
+        if 'instances' in data:
+            for instance_data in data['instances']:
+                instance = ApplicationInstance.query.get(instance_data['id'])
+                if instance:
+                    instance.host = instance_data.get('host', instance.host)
+                    instance.port = instance_data.get('port', instance.port)
+                    instance.webui_url = instance_data.get('webui_url', instance.webui_url)
+                    instance.db_host = instance_data.get('db_host', instance.db_host)
+                    db.session.add(instance)
+        
+        db.session.add(app)
+        db.session.commit()
+        return jsonify({'status': 'success', 'message': 'Application updated successfully'})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @main.route('/api/systems', methods=['GET'])
 def get_systems():
     try:
-        systems = System.objects.all()
+        systems = System.query.all()
         return jsonify([system.to_dict() for system in systems])
     except Exception as e:
-        logger.error(f"Error getting systems: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
-@main.route('/api/systems/<system_id>', methods=['DELETE'])
+@main.route('/api/systems/<int:system_id>', methods=['DELETE'])
 def delete_system(system_id):
     try:
-        system = System.objects.get(id=system_id)
-        system.delete()
+        system = System.query.get_or_404(system_id)
+        db.session.delete(system)
+        db.session.commit()
         return jsonify({'message': 'System deleted successfully'})
-    except System.DoesNotExist:
-        return jsonify({'error': 'System not found'}), 404
     except Exception as e:
         logger.error(f"Error deleting system: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@main.route('/api/import', methods=['POST'])
+@main.route('/import_apps', methods=['POST'])
 def import_data():
     try:
         if 'file' not in request.files:
             return jsonify({"error": "No file provided"}), 400
-            
+        
         file = request.files['file']
         if not file.filename.endswith('.csv'):
-            return jsonify({"error": "Only CSV files are supported"}), 400
-
-        content = file.read().decode('utf-8').splitlines()
-        reader = csv.DictReader(content)
+            return jsonify({"error": "Invalid file format. Please upload a CSV file"}), 400
         
-        for row in reader:
-            team_name = row.get('team')
-            app_name = row.get('application')
-            system_name = row.get('system')
-            host = row.get('host')
-            port = row.get('port')
-            webui_url = row.get('webui_url')
+        imported_count = 0
+        skipped_count = 0
+        
+        with tempfile.NamedTemporaryFile(mode='wb', delete=False) as temp_file:
+            file.save(temp_file.name)
             
-            if not all([team_name, app_name, system_name, host]):
-                continue
-                
-            # Create or get team
-            team = Team.objects(name=team_name).first()
-            if not team:
-                team = Team(name=team_name).save()
-                
-            # Create or get application
-            app = Application.objects(name=app_name, team=team).first()
-            if not app:
-                app = Application(name=app_name, team=team).save()
-                
-            # Create system if it doesn't exist
-            if not System.objects(name=system_name, application=app).first():
-                system = System(
-                    name=system_name,
-                    application=app,
-                    host=host,
-                    port=int(port) if port else 80,
-                    webui_url=webui_url
-                ).save()
+            with open(temp_file.name, 'r') as csvfile:
+                reader = csv.DictReader(csvfile)
+                for row in reader:
+                    try:
+                        team = Team.query.filter_by(name=row['team']).first()
+                        if not team:
+                            team = Team(name=row['team'])
+                            db.session.add(team)
+                            db.session.flush()
+                        
+                        app = Application(
+                            name=row['name'],
+                            team_id=team.id,
+                            webui_url=row.get('webui_url')
+                        )
+                        db.session.add(app)
+                        db.session.flush()
+                        
+                        instance = ApplicationInstance(
+                            application_id=app.id,
+                            host=row['host'],
+                            port=int(row['port']) if row.get('port') else None,
+                            webui_url=row.get('webui_url'),
+                            db_host=row.get('db_host')
+                        )
+                        db.session.add(instance)
+                        imported_count += 1
+                    except Exception:
+                        skipped_count += 1
+            
+            db.session.commit()
+            os.unlink(temp_file.name)
+            
+        return jsonify({
+            "status": "success",
+            "imported": imported_count,
+            "skipped": skipped_count
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+@main.route('/shutdown_app/<int:app_id>', methods=['POST'])
+def shutdown_app(app_id):
+    try:
+        app = Application.query.get_or_404(app_id)
+        instances = ApplicationInstance.query.filter_by(application_id=app_id).all()
         
-        return jsonify({"message": "Import successful"})
+        for instance in instances:
+            instance.status = 'in_progress'
+            db.session.add(instance)
+        
+        app.state = 'completed'
+        db.session.add(app)
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Application shutdown in progress'
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
