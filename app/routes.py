@@ -19,6 +19,20 @@ def get_teams():
         logger.error(f"Error getting teams: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@main.route('/api/teams/<team_id>', methods=['DELETE'])
+def delete_team(team_id):
+    try:
+        team = Team.objects.get(id=team_id)
+        # Delete all associated applications first
+        Application.objects(team=team).delete()
+        team.delete()
+        return jsonify({'message': 'Team deleted successfully'})
+    except Team.DoesNotExist:
+        return jsonify({'error': 'Team not found'}), 404
+    except Exception as e:
+        logger.error(f"Error deleting team: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @main.route('/api/applications', methods=['GET'])
 def get_applications():
     try:
@@ -27,13 +41,18 @@ def get_applications():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@main.route('/api/systems', methods=['GET'])
-def get_systems():
+@main.route('/api/applications/<app_id>', methods=['DELETE'])
+def delete_application(app_id):
     try:
-        systems = System.objects.all()
-        return jsonify([system.to_dict() for system in systems])
+        app = Application.objects.get(id=app_id)
+        # Delete all associated systems first
+        System.objects(application=app).delete()
+        app.delete()
+        return jsonify({'message': 'Application deleted successfully'})
+    except Application.DoesNotExist:
+        return jsonify({'error': 'Application not found'}), 404
     except Exception as e:
-        logger.error(f"Error getting systems: {str(e)}")
+        logger.error(f"Error deleting application: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @main.route('/api/applications/<app_id>/systems', methods=['GET'])
@@ -67,6 +86,27 @@ def update_app_state(app_id):
         return jsonify({"error": "Application not found"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@main.route('/api/systems', methods=['GET'])
+def get_systems():
+    try:
+        systems = System.objects.all()
+        return jsonify([system.to_dict() for system in systems])
+    except Exception as e:
+        logger.error(f"Error getting systems: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/systems/<system_id>', methods=['DELETE'])
+def delete_system(system_id):
+    try:
+        system = System.objects.get(id=system_id)
+        system.delete()
+        return jsonify({'message': 'System deleted successfully'})
+    except System.DoesNotExist:
+        return jsonify({'error': 'System not found'}), 404
+    except Exception as e:
+        logger.error(f"Error deleting system: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/api/import', methods=['POST'])
 def import_data():
