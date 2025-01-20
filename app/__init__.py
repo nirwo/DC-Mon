@@ -1,9 +1,8 @@
 import os
 from flask import Flask
 from flask_cors import CORS
-from app.database import init_db
+from mongoengine import connect, disconnect
 from app.routes import main as main_bp
-from app.worker import start_background_checker
 
 def create_app():
     app = Flask(__name__)
@@ -14,10 +13,9 @@ def create_app():
     
     with app.app_context():
         # Initialize MongoDB connection
-        init_db()
-        
-        # Start background checker
-        if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
-            start_background_checker(app)
+        mongo_uri = os.environ.get('MONGODB_URI', 'mongodb://mongo:27017/shutdown_manager')
+        disconnect()  # Disconnect any existing connections
+        connect(host=mongo_uri)
+        app.logger.info("Successfully connected to MongoDB")
             
     return app

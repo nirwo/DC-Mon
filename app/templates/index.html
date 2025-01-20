@@ -8,10 +8,10 @@
         <div class="col">
             <div class="card">
                 <div class="card-header">
-                    <h5 class="mb-0">Import Data</h5>
+                    <h5 class="mb-0">Actions</h5>
                 </div>
                 <div class="card-body">
-                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal">Import</button>
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal">Import Data</button>
                     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTeamModal">Add Team</button>
                     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addApplicationModal">Add Application</button>
                     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSystemModal">Add System</button>
@@ -30,86 +30,17 @@
         <li class="nav-item">
             <a class="nav-link" id="systems-tab" data-bs-toggle="tab" href="#systems" role="tab">Systems</a>
         </li>
-        <li class="nav-item">
-            <a class="nav-link" id="applications-table-tab" data-bs-toggle="tab" href="#applications-table" role="tab">Applications Table</a>
-        </li>
-        <li class="nav-item">
-            <button class="btn btn-outline-primary ms-2" data-bs-toggle="modal" data-bs-target="#importModal">
-                <i class="bi bi-upload"></i> Import
-            </button>
-        </li>
     </ul>
 
     <div class="tab-content">
         <div class="tab-pane fade show active" id="applications" role="tabpanel">
-            <div class="row mb-4">
+            <div class="row">
                 <div class="col-md-4">
                     <div class="card">
                         <div class="card-header bg-light">
                             <h5 class="mb-0">Not Started</h5>
                         </div>
                         <div class="card-body" id="notStartedList" ondrop="drop(event)" ondragover="allowDrop(event)">
-                            {% for app in applications %}
-                            {% if app.state == 'notStarted' %}
-                            <div class="card mb-2 application-card" id="app-{{ app._id }}" draggable="true" ondragstart="drag(event)">
-                                <div class="card-body">
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <h6 class="mb-1">{{ app.name }}</h6>
-                                            <small>Team: {{ app.team.name }}</small>
-                                        </div>
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" id="toggle-{{ app._id }}" {% if app.enabled %}checked{% endif %} onchange="toggleApplication('{{ app._id }}')">
-                                        </div>
-                                        <button class="btn btn-danger btn-sm" onclick="deleteApplication('{{ app._id }}')">Delete</button>
-                                        <button class="btn btn-primary btn-sm" onclick="runTest('{{ app._id }}')">Run Test</button>
-                                    </div>
-                                    {% if app.systems %}
-                                    <div class="mt-2">
-                                        <small class="text-muted">Systems:</small>
-                                        {% for system in app.systems %}
-                                        <div class="d-flex justify-content-between align-items-center mt-1">
-                                            <span class="small">{{ system.name }}</span>
-                                            {% if system.webui_url %}
-                                            <a href="{{ system.webui_url }}" target="_blank" class="system-url">🔗</a>
-                                            {% endif %}
-                                            {% if system.port %}
-                                            <span class="port-badge">:{{ system.port }}</span>
-                                            {% endif %}
-                                            <span class="badge bg-{{ 'success' if system.status == 'running' else 'secondary' }}">
-                                                {{ system.status }}
-                                            </span>
-                                            <button class="btn btn-danger btn-sm" onclick="deleteSystem('{{ system.id }}')">Delete</button>
-                                        </div>
-                                        {% endfor %}
-                                    </div>
-                                    {% endif %}
-                                    <div class="mt-2">
-                                        <small class="text-muted">Sequence:</small>
-                                        <span class="small">{{ app.sequence }}</span>
-                                    </div>
-                                    <div class="mt-2">
-                                        <small class="text-muted">Shutdown Order:</small>
-                                        <span class="small">{{ app.shutdown_order }}</span>
-                                    </div>
-                                    <div class="mt-2">
-                                        <small class="text-muted">Dependencies:</small>
-                                        {% if app.dependencies %}
-                                        <ul class="dependencies-list">
-                                            {% for dep in app.dependencies %}
-                                            <li>{{ dep }}</li>
-                                            {% endfor %}
-                                        </ul>
-                                        {% endif %}
-                                    </div>
-                                    <div class="mt-2">
-                                        <small class="text-muted">Test Status:</small>
-                                        <td class="test-status"></td>
-                                    </div>
-                                </div>
-                            </div>
-                            {% endif %}
-                            {% endfor %}
                         </div>
                     </div>
                 </div>
@@ -119,67 +50,6 @@
                             <h5 class="mb-0">In Progress</h5>
                         </div>
                         <div class="card-body" id="inProgressList" ondrop="drop(event)" ondragover="allowDrop(event)">
-                            {% for app in applications %}
-                            {% if app.state == 'inProgress' %}
-                            <div class="card mb-2 application-card" id="app-{{ app._id }}" draggable="true" ondragstart="drag(event)">
-                                <div class="card-body">
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <h6 class="mb-1">{{ app.name }}</h6>
-                                            <small>Team: {{ app.team.name }}</small>
-                                        </div>
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" id="toggle-{{ app._id }}" {% if app.enabled %}checked{% endif %} onchange="toggleApplication('{{ app._id }}')">
-                                        </div>
-                                        <button class="btn btn-danger btn-sm" onclick="deleteApplication('{{ app._id }}')">Delete</button>
-                                        <button class="btn btn-primary btn-sm" onclick="runTest('{{ app._id }}')">Run Test</button>
-                                    </div>
-                                    {% if app.systems %}
-                                    <div class="mt-2">
-                                        <small class="text-muted">Systems:</small>
-                                        {% for system in app.systems %}
-                                        <div class="d-flex justify-content-between align-items-center mt-1">
-                                            <span class="small">{{ system.name }}</span>
-                                            {% if system.webui_url %}
-                                            <a href="{{ system.webui_url }}" target="_blank" class="system-url">🔗</a>
-                                            {% endif %}
-                                            {% if system.port %}
-                                            <span class="port-badge">:{{ system.port }}</span>
-                                            {% endif %}
-                                            <span class="badge bg-{{ 'success' if system.status == 'running' else 'secondary' }}">
-                                                {{ system.status }}
-                                            </span>
-                                            <button class="btn btn-danger btn-sm" onclick="deleteSystem('{{ system.id }}')">Delete</button>
-                                        </div>
-                                        {% endfor %}
-                                    </div>
-                                    {% endif %}
-                                    <div class="mt-2">
-                                        <small class="text-muted">Sequence:</small>
-                                        <span class="small">{{ app.sequence }}</span>
-                                    </div>
-                                    <div class="mt-2">
-                                        <small class="text-muted">Shutdown Order:</small>
-                                        <span class="small">{{ app.shutdown_order }}</span>
-                                    </div>
-                                    <div class="mt-2">
-                                        <small class="text-muted">Dependencies:</small>
-                                        {% if app.dependencies %}
-                                        <ul class="dependencies-list">
-                                            {% for dep in app.dependencies %}
-                                            <li>{{ dep }}</li>
-                                            {% endfor %}
-                                        </ul>
-                                        {% endif %}
-                                    </div>
-                                    <div class="mt-2">
-                                        <small class="text-muted">Test Status:</small>
-                                        <td class="test-status"></td>
-                                    </div>
-                                </div>
-                            </div>
-                            {% endif %}
-                            {% endfor %}
                         </div>
                     </div>
                 </div>
@@ -189,67 +59,6 @@
                             <h5 class="mb-0">Completed</h5>
                         </div>
                         <div class="card-body" id="completedList" ondrop="drop(event)" ondragover="allowDrop(event)">
-                            {% for app in applications %}
-                            {% if app.state == 'completed' %}
-                            <div class="card mb-2 application-card" id="app-{{ app._id }}" draggable="true" ondragstart="drag(event)">
-                                <div class="card-body">
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <h6 class="mb-1">{{ app.name }}</h6>
-                                            <small>Team: {{ app.team.name }}</small>
-                                        </div>
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" id="toggle-{{ app._id }}" {% if app.enabled %}checked{% endif %} onchange="toggleApplication('{{ app._id }}')">
-                                        </div>
-                                        <button class="btn btn-danger btn-sm" onclick="deleteApplication('{{ app._id }}')">Delete</button>
-                                        <button class="btn btn-primary btn-sm" onclick="runTest('{{ app._id }}')">Run Test</button>
-                                    </div>
-                                    {% if app.systems %}
-                                    <div class="mt-2">
-                                        <small class="text-muted">Systems:</small>
-                                        {% for system in app.systems %}
-                                        <div class="d-flex justify-content-between align-items-center mt-1">
-                                            <span class="small">{{ system.name }}</span>
-                                            {% if system.webui_url %}
-                                            <a href="{{ system.webui_url }}" target="_blank" class="system-url">🔗</a>
-                                            {% endif %}
-                                            {% if system.port %}
-                                            <span class="port-badge">:{{ system.port }}</span>
-                                            {% endif %}
-                                            <span class="badge bg-{{ 'success' if system.status == 'running' else 'secondary' }}">
-                                                {{ system.status }}
-                                            </span>
-                                            <button class="btn btn-danger btn-sm" onclick="deleteSystem('{{ system.id }}')">Delete</button>
-                                        </div>
-                                        {% endfor %}
-                                    </div>
-                                    {% endif %}
-                                    <div class="mt-2">
-                                        <small class="text-muted">Sequence:</small>
-                                        <span class="small">{{ app.sequence }}</span>
-                                    </div>
-                                    <div class="mt-2">
-                                        <small class="text-muted">Shutdown Order:</small>
-                                        <span class="small">{{ app.shutdown_order }}</span>
-                                    </div>
-                                    <div class="mt-2">
-                                        <small class="text-muted">Dependencies:</small>
-                                        {% if app.dependencies %}
-                                        <ul class="dependencies-list">
-                                            {% for dep in app.dependencies %}
-                                            <li>{{ dep }}</li>
-                                            {% endfor %}
-                                        </ul>
-                                        {% endif %}
-                                    </div>
-                                    <div class="mt-2">
-                                        <small class="text-muted">Test Status:</small>
-                                        <td class="test-status"></td>
-                                    </div>
-                                </div>
-                            </div>
-                            {% endif %}
-                            {% endfor %}
                         </div>
                     </div>
                 </div>
@@ -257,107 +66,32 @@
         </div>
 
         <div class="tab-pane fade" id="teams" role="tabpanel">
-            <div class="row mt-3">
+            <div class="row">
                 <div class="col">
-                    <div id="teams-list"></div>
+                    <div id="teamsList"></div>
                 </div>
             </div>
         </div>
 
         <div class="tab-pane fade" id="systems" role="tabpanel">
-            <div class="container mt-4" id="systemsContainer">
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="card">
-                            <div class="card-header bg-success text-white">
-                                <h5 class="card-title mb-0">Running Systems</h5>
-                            </div>
-                            <div id="running-systems" class="list-group list-group-flush">
-                                <!-- Running systems will be populated here -->
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="card">
-                            <div class="card-header bg-secondary text-white">
-                                <h5 class="card-title mb-0">Stopped Systems</h5>
-                            </div>
-                            <div id="stopped-systems" class="list-group list-group-flush">
-                                <!-- Stopped systems will be populated here -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="tab-pane fade" id="applications-table" role="tabpanel">
-            <div class="row mt-3">
+            <div class="row">
                 <div class="col">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Application</th>
-                                <th>Team</th>
-                                <th>State</th>
-                                <th>Shutdown Order</th>
-                                <th>Dependencies</th>
-                                <th>Systems</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for app in applications %}
-                            <tr>
-                                <td>{{ app.name }}</td>
-                                <td>{{ app.team.name }}</td>
-                                <td>
-                                    <select class="state-select" data-app-id="{{ app._id }}" onchange="updateApplicationState('{{ app._id }}', this.value)">
-                                        <option value="notStarted" {% if app.state == 'notStarted' %}selected{% endif %}>Not Started</option>
-                                        <option value="inProgress" {% if app.state == 'inProgress' %}selected{% endif %}>In Progress</option>
-                                        <option value="completed" {% if app.state == 'completed' %}selected{% endif %}>Completed</option>
-                                    </select>
-                                </td>
-                                <td>{{ app.shutdown_order }}</td>
-                                <td>
-                                    {% if app.dependencies %}
-                                    <ul class="dependencies-list">
-                                        {% for dep in app.dependencies %}
-                                        <li>{{ dep }}</li>
-                                        {% endfor %}
-                                    </ul>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <ul class="systems-list">
-                                        {% for system in app.systems %}
-                                        <li>
-                                            {{ system.name }}
-                                            {% if system.webui_url %}
-                                            <a href="{{ system.webui_url }}" target="_blank" class="system-url">🔗</a>
-                                            {% endif %}
-                                            {% if system.port %}
-                                            <span class="port-badge">:{{ system.port }}</span>
-                                            {% endif %}
-                                            <span class="status-dot status-{{ system.status }}"></span>
-                                            <button onclick="deleteSystem('{{ system.id }}')" class="delete-btn">Delete</button>
-                                        </li>
-                                        {% endfor %}
-                                    </ul>
-                                </td>
-                                <td>
-                                    <div class="btn-group">
-                                        <button onclick="toggleApplication('{{ app._id }}', {{ 'false' if app.enabled else 'true' }})" class="toggle-btn {{ 'enabled' if app.enabled else 'disabled' }}">
-                                            {{ 'Disable' if app.enabled else 'Enable' }}
-                                        </button>
-                                        <button onclick="deleteApplication('{{ app._id }}')" class="delete-btn">Delete</button>
-                                        <button class="btn btn-primary btn-sm" onclick="runTest('{{ app._id }}')">Run Test</button>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Application</th>
+                                    <th>Host</th>
+                                    <th>Port</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="systemsList">
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -365,108 +99,118 @@
 </div>
 
 <!-- Add Team Modal -->
-<div class="modal fade" id="addTeamModal" tabindex="-1" aria-labelledby="addTeamModalLabel" aria-hidden="true">
+<div class="modal fade" id="addTeamModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="addTeamModalLabel">Add New Team</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title">Add New Team</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <form id="addTeamForm">
                     <div class="mb-3">
-                        <label for="teamName" class="form-label">Team Name</label>
+                        <label class="form-label">Team Name</label>
                         <input type="text" class="form-control" id="teamName" required>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="createTeam()">Create Team</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="createTeam()">Add Team</button>
             </div>
         </div>
     </div>
 </div>
 
 <!-- Add Application Modal -->
-<div class="modal fade" id="addApplicationModal" tabindex="-1" aria-labelledby="addApplicationModalLabel" aria-hidden="true">
+<div class="modal fade" id="addApplicationModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="addApplicationModalLabel">Add New Application</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title">Add New Application</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <form id="addApplicationForm">
                     <div class="mb-3">
-                        <label for="appName" class="form-label">Application Name</label>
-                        <input type="text" class="form-control" id="appName" required>
+                        <label class="form-label">Application Name</label>
+                        <input type="text" class="form-control" id="applicationName" required>
                     </div>
                     <div class="mb-3">
-                        <label for="appTeam" class="form-label">Team</label>
-                        <select class="form-select" id="appTeam" required>
-                            {% for team in teams %}
-                            <option value="{{ team._id }}">{{ team.name }}</option>
-                            {% endfor %}
+                        <label class="form-label">Team</label>
+                        <select class="form-control" id="applicationTeam" required>
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label for="shutdownOrder" class="form-label">Shutdown Order</label>
-                        <input type="number" class="form-control" id="shutdownOrder" value="0">
-                    </div>
-                    <div class="mb-3">
-                        <label for="dependencies" class="form-label">Dependencies (comma-separated)</label>
-                        <input type="text" class="form-control" id="dependencies" placeholder="app1,app2">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" id="applicationDescription"></textarea>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="createApplication()">Create Application</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="createApplication()">Add Application</button>
             </div>
         </div>
     </div>
 </div>
 
 <!-- Add System Modal -->
-<div class="modal fade" id="addSystemModal" tabindex="-1" aria-labelledby="addSystemModalLabel" aria-hidden="true">
+<div class="modal fade" id="addSystemModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="addSystemModalLabel">Add New System</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title">Add New System</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <form id="addSystemForm">
                     <div class="mb-3">
-                        <label for="systemHost" class="form-label">Host</label>
-                        <input type="text" class="form-control" id="systemHost" required>
+                        <label class="form-label">System Name</label>
+                        <input type="text" class="form-control" id="systemName" required>
                     </div>
                     <div class="mb-3">
-                        <label for="systemName" class="form-label">System Name (optional)</label>
-                        <input type="text" class="form-control" id="systemName" placeholder="Will use host if not specified">
-                    </div>
-                    <div class="mb-3">
-                        <label for="systemApp" class="form-label">Application</label>
-                        <select class="form-select" id="systemApp" required>
-                            {% for app in applications %}
-                            <option value="{{ app._id }}">{{ app.name }}</option>
-                            {% endfor %}
+                        <label class="form-label">Application</label>
+                        <select class="form-control" id="systemApplication" required>
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label for="systemPort" class="form-label">Port</label>
-                        <input type="number" class="form-control" id="systemPort">
+                        <label class="form-label">Host</label>
+                        <input type="text" class="form-control" id="systemHost" required>
                     </div>
                     <div class="mb-3">
-                        <label for="systemWebUI" class="form-label">WebUI URL</label>
-                        <input type="url" class="form-control" id="systemWebUI">
+                        <label class="form-label">Port</label>
+                        <input type="number" class="form-control" id="systemPort" required>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="createSystem()">Create System</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="createSystem()">Add System</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Import Data</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="importForm">
+                    <div class="mb-3">
+                        <label class="form-label">CSV File</label>
+                        <input type="file" class="form-control" id="file" accept=".csv" required>
+                        <small class="text-muted">
+                            File should have columns: team, application, system, host, port (optional), webui_url (optional)
+                        </small>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Import</button>
+                </form>
             </div>
         </div>
     </div>
@@ -962,10 +706,9 @@ function createTeam() {
 }
 
 function createApplication() {
-    const appName = document.getElementById('appName').value;
-    const teamId = document.getElementById('appTeam').value;
-    const shutdownOrder = document.getElementById('shutdownOrder').value;
-    const dependencies = document.getElementById('dependencies').value.split(',').filter(d => d.trim());
+    const appName = document.getElementById('applicationName').value;
+    const teamId = document.getElementById('applicationTeam').value;
+    const description = document.getElementById('applicationDescription').value;
     
     fetch('/api/applications/create', {
         method: 'POST',
@@ -975,8 +718,7 @@ function createApplication() {
         body: JSON.stringify({
             name: appName,
             team_id: teamId,
-            shutdown_order: shutdownOrder,
-            dependencies: dependencies
+            description: description
         })
     })
     .then(response => response.json())
@@ -1000,11 +742,10 @@ function createApplication() {
 }
 
 function createSystem() {
+    const systemName = document.getElementById('systemName').value;
+    const appId = document.getElementById('systemApplication').value;
     const host = document.getElementById('systemHost').value;
-    const name = document.getElementById('systemName').value;
-    const appId = document.getElementById('systemApp').value;
     const port = document.getElementById('systemPort').value;
-    const webui = document.getElementById('systemWebUI').value;
     
     fetch('/api/systems', {
         method: 'POST',
@@ -1012,11 +753,10 @@ function createSystem() {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-            host: host,
-            name: name || host,
+            name: systemName,
             application_id: appId,
-            port: port,
-            webui_url: webui
+            host: host,
+            port: port
         })
     })
     .then(response => response.json())
@@ -1096,170 +836,47 @@ function updateSystemsList() {
             return response.json();
         })
         .then(systems => {
-            const runningSystems = document.getElementById('running-systems');
-            const stoppedSystems = document.getElementById('stopped-systems');
-            const unknownSystems = document.getElementById('unknown-systems');
+            const systemsList = document.getElementById('systemsList');
+            if (!systemsList) return;
             
-            if (runningSystems) runningSystems.innerHTML = '';
-            if (stoppedSystems) stoppedSystems.innerHTML = '';
-            if (unknownSystems) unknownSystems.innerHTML = '';
-            
+            systemsList.innerHTML = '';
             systems.forEach(system => {
                 const systemHtml = `
-                    <div class="system-row ${system.status}">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="mb-0">
-                                    ${system.name}
-                                    <span class="status-dot ${system.status}"></span>
-                                </h5>
-                                <small class="text-muted">Host: ${system.host}</small>
-                                ${system.last_checked ? 
-                                    `<small class="text-muted d-block">Last checked: ${new Date(system.last_checked).toLocaleString()}</small>` 
-                                    : ''}
-                            </div>
-                            <div class="d-flex align-items-center gap-2">
-                                <div class="form-check form-switch">
-                                    <input class="form-check-input" type="checkbox" 
-                                        ${system.status === 'running' ? 'checked' : ''} 
-                                        onchange="toggleSystemStatus('${system.id}', this)">
-                                </div>
-                            </div>
-                        </div>
-                        ${system.port ? `<div class="mt-1"><small class="text-muted">Port: ${system.port}</small></div>` : ''}
-                        ${system.webui_url ? `<div class="mt-2">
-                            <a href="${system.webui_url}" target="_blank" class="btn btn-sm btn-outline-primary">
-                                <i class="bi bi-box-arrow-up-right"></i> Open WebUI
-                            </a>
-                        </div>` : ''}
-                    </div>
+                    <tr data-system-id="${system.id}">
+                        <td>${system.name}</td>
+                        <td>${system.application.name}</td>
+                        <td>${system.host}</td>
+                        <td>${system.port}</td>
+                        <td>
+                            <span class="badge bg-${system.status === 'running' ? 'success' : system.status === 'stopped' ? 'danger' : 'warning'}">
+                                ${system.status}
+                            </span>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-danger" onclick="deleteSystem('${system.id}')">Delete</button>
+                        </td>
+                    </tr>
                 `;
-                
-                if (system.status === 'running') {
-                    if (runningSystems) runningSystems.insertAdjacentHTML('beforeend', systemHtml);
-                } else if (system.status === 'stopped') {
-                    if (stoppedSystems) stoppedSystems.insertAdjacentHTML('beforeend', systemHtml);
-                } else {
-                    if (unknownSystems) unknownSystems.insertAdjacentHTML('beforeend', systemHtml);
-                }
+                systemsList.insertAdjacentHTML('beforeend', systemHtml);
             });
         })
         .catch(error => {
             console.error('Error updating systems:', error);
-            showAlert('danger', 'Failed to update systems status');
+            showAlert('danger', 'Failed to update systems list');
         });
 }
 
-function runTest(appId) {
-    const button = document.querySelector(`button[onclick="runTest('${appId}')"]`);
-    button.disabled = true;
-    button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Running...';
+// Update teams list every 10 seconds
+setInterval(updateTeamsList, 10000);
 
-    fetch(`/api/applications/${appId}/test`, {
-        method: 'POST'
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showAlert('info', 'Test started. Please wait...', 0);
-            pollTestStatus(appId);
-        } else {
-            showAlert('danger', `Failed to start test: ${data.error}`, 0);
-            button.disabled = false;
-            button.textContent = 'Run Test';
-        }
-    })
-    .catch(error => {
-        console.error('Test error:', error);
-        showAlert('danger', 'Failed to start test', 0);
-        button.disabled = false;
-        button.textContent = 'Run Test';
-    });
-}
-
-function pollTestStatus(appId, interval = 2000) {
-    const button = document.querySelector(`button[onclick="runTest('${appId}')"]`);
-    const statusCell = document.querySelector(`tr[data-app-id="${appId}"] td.test-status`);
-
-    fetch(`/api/applications/${appId}/test/status`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                if (statusCell) {
-                    let statusHtml = `<span class="badge bg-${getStatusBadgeClass(data.status)}">${data.status}</span>`;
-                    if (data.results) {
-                        statusHtml += '<br><small class="text-muted">' + 
-                            data.results.map(r => `${r.name}: ${r.passed ? '✓' : '✗'}`).join(', ') +
-                            '</small>';
-                    }
-                    statusCell.innerHTML = statusHtml;
-                }
-
-                if (data.job_status === 'pending' || data.job_status === 'running') {
-                    setTimeout(() => pollTestStatus(appId, interval), interval);
-                } else {
-                    button.disabled = false;
-                    button.textContent = 'Run Test';
-
-                    if (data.job_status === 'completed') {
-                        if (data.status === 'passed') {
-                            showAlert('success', 'Test completed successfully', 5000);
-                        } else {
-                            showAlert('warning', 'Test completed with failures', 0);
-                        }
-                    } else if (data.job_status === 'failed') {
-                        showAlert('danger', 'Test failed to complete', 0);
-                    }
-                }
-            } else {
-                button.disabled = false;
-                button.textContent = 'Run Test';
-                showAlert('danger', `Failed to get test status: ${data.error}`, 0);
-            }
-        })
-        .catch(error => {
-            console.error('Status check error:', error);
-            button.disabled = false;
-            button.textContent = 'Run Test';
-            showAlert('danger', 'Failed to check test status', 0);
-        });
-}
-
-function getStatusBadgeClass(status) {
-    switch (status) {
-        case 'passed': return 'success';
-        case 'failed': return 'danger';
-        case 'pending': return 'warning';
-        case 'running': return 'info';
-        case 'error': return 'danger';
-        default: return 'secondary';
-    }
-}
-
-let updateInterval;
-
-function startAutoUpdate() {
-    // Initial update
-    updateSystemsList();
-    updateTeamsList();
-    
-    // Clear existing interval if any
-    if (updateInterval) {
-        clearInterval(updateInterval);
-    }
-    
-    // Set new interval - update every 10 seconds
-    updateInterval = setInterval(() => {
-        updateSystemsList();
-        updateTeamsList();
-    }, 10000);
-}
+// Initial update
+document.addEventListener('DOMContentLoaded', updateTeamsList);
 
 function updateTeamsList() {
     fetch('/api/teams')
         .then(response => response.json())
         .then(teams => {
-            const teamsList = document.getElementById('teams-list');
+            const teamsList = document.getElementById('teamsList');
             if (!teamsList) return;
             
             teamsList.innerHTML = '';
@@ -1301,12 +918,6 @@ function updateTeamsList() {
             showAlert('danger', 'Failed to update teams list');
         });
 }
-
-// Update teams list every 10 seconds
-setInterval(updateTeamsList, 10000);
-
-// Initial update
-document.addEventListener('DOMContentLoaded', updateTeamsList);
 
 function handleImport(event) {
     event.preventDefault();
