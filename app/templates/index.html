@@ -25,10 +25,10 @@
             <a class="nav-link active" id="applications-tab" data-bs-toggle="tab" href="#applications" role="tab">Applications</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" id="teams-tab" data-bs-toggle="tab" href="#teams" role="tab">Teams</a>
+            <a class="nav-link" id="systems-tab" data-bs-toggle="tab" href="#systems" role="tab">Systems</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" id="systems-tab" data-bs-toggle="tab" href="#systems" role="tab">Systems</a>
+            <a class="nav-link" id="teams-tab" data-bs-toggle="tab" href="#teams-table" role="tab">Teams</a>
         </li>
         <li class="nav-item">
             <a class="nav-link" id="applications-table-tab" data-bs-toggle="tab" href="#applications-table" role="tab">Applications Table</a>
@@ -256,10 +256,10 @@
             </div>
         </div>
 
-        <div class="tab-pane fade" id="teams" role="tabpanel">
-            <div class="row mt-3">
-                <div class="col">
-                    <div id="teams-list"></div>
+        <div class="tab-pane fade" id="teams-table" role="tabpanel">
+            <div class="teams-grid">
+                <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4" id="teams-container">
+                    <!-- Teams will be dynamically added here -->
                 </div>
             </div>
         </div>
@@ -292,73 +292,21 @@
         </div>
 
         <div class="tab-pane fade" id="applications-table" role="tabpanel">
-            <div class="row mt-3">
-                <div class="col">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Application</th>
-                                <th>Team</th>
-                                <th>State</th>
-                                <th>Shutdown Order</th>
-                                <th>Dependencies</th>
-                                <th>Systems</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for app in applications %}
-                            <tr>
-                                <td>{{ app.name }}</td>
-                                <td>{{ app.team.name }}</td>
-                                <td>
-                                    <select class="state-select" data-app-id="{{ app._id }}" onchange="updateApplicationState('{{ app._id }}', this.value)">
-                                        <option value="notStarted" {% if app.state == 'notStarted' %}selected{% endif %}>Not Started</option>
-                                        <option value="inProgress" {% if app.state == 'inProgress' %}selected{% endif %}>In Progress</option>
-                                        <option value="completed" {% if app.state == 'completed' %}selected{% endif %}>Completed</option>
-                                    </select>
-                                </td>
-                                <td>{{ app.shutdown_order }}</td>
-                                <td>
-                                    {% if app.dependencies %}
-                                    <ul class="dependencies-list">
-                                        {% for dep in app.dependencies %}
-                                        <li>{{ dep }}</li>
-                                        {% endfor %}
-                                    </ul>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <ul class="systems-list">
-                                        {% for system in app.systems %}
-                                        <li>
-                                            {{ system.name }}
-                                            {% if system.webui_url %}
-                                            <a href="{{ system.webui_url }}" target="_blank" class="system-url">🔗</a>
-                                            {% endif %}
-                                            {% if system.port %}
-                                            <span class="port-badge">:{{ system.port }}</span>
-                                            {% endif %}
-                                            <span class="status-dot status-{{ system.status }}"></span>
-                                            <button onclick="deleteSystem('{{ system.id }}')" class="delete-btn">Delete</button>
-                                        </li>
-                                        {% endfor %}
-                                    </ul>
-                                </td>
-                                <td>
-                                    <div class="btn-group">
-                                        <button onclick="toggleApplication('{{ app._id }}', {{ 'false' if app.enabled else 'true' }})" class="toggle-btn {{ 'enabled' if app.enabled else 'disabled' }}">
-                                            {{ 'Disable' if app.enabled else 'Enable' }}
-                                        </button>
-                                        <button onclick="deleteApplication('{{ app._id }}')" class="delete-btn">Delete</button>
-                                        <button class="btn btn-primary btn-sm" onclick="runTest('{{ app._id }}')">Run Test</button>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Application</th>
+                            <th>Team</th>
+                            <th>Systems</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="applications-container">
+                        <!-- Applications will be dynamically added here -->
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -525,219 +473,268 @@
 </div>
 
 <style>
-.system-row {
-    padding: 1rem;
-    margin-bottom: 0.5rem;
-    border-radius: 4px;
-    transition: all 0.3s ease;
+:root {
+    --color-completed: #e3f5e9;
+    --color-completed-border: #4ade80;
+    --color-in-progress: #e0f2fe;
+    --color-in-progress-border: #38bdf8;
+    --color-not-started: #f1f5f9;
+    --color-not-started-border: #94a3b8;
+    --transition-speed: 0.3s;
 }
 
-.system-row.running {
-    background-color: #d4edda;
-    border-left: 5px solid #28a745;
+body {
+    background-color: #f8fafc;
 }
 
-.system-row.stopped {
-    background-color: #f8d7da;
-    border-left: 5px solid #dc3545;
+.nav-tabs {
+    border-bottom: none;
+    margin-bottom: 1.5rem;
 }
 
-.system-row.unknown {
-    background-color: #fff3cd;
-    border-left: 5px solid #ffc107;
+.nav-tabs .nav-link {
+    color: #64748b;
+    border: none;
+    padding: 0.75rem 1rem;
+    margin-right: 0.5rem;
+    transition: all var(--transition-speed) ease;
 }
 
-.status-dot {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    margin-left: 8px;
-    position: relative;
-}
-
-.status-dot:after {
-    content: '';
-    position: absolute;
-    top: -2px;
-    left: -2px;
-    right: -2px;
-    bottom: -2px;
-    border-radius: 50%;
-    animation: pulse 2s infinite;
-}
-
-.status-dot.running {
-    background-color: #28a745;
-}
-
-.status-dot.running:after {
-    border: 2px solid #28a745;
-}
-
-.status-dot.stopped {
-    background-color: #dc3545;
-}
-
-.status-dot.stopped:after {
-    border: 2px solid #dc3545;
-}
-
-.status-dot.unknown {
-    background-color: #ffc107;
-}
-
-.status-dot.unknown:after {
-    border: 2px solid #ffc107;
-}
-
-@keyframes pulse {
-    0% {
-        transform: scale(1);
-        opacity: 1;
-    }
-    50% {
-        transform: scale(1.5);
-        opacity: 0.5;
-    }
-    100% {
-        transform: scale(1);
-        opacity: 1;
-    }
-}
-
-.systems-container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 1rem;
-}
-
-.systems-header {
-    font-size: 1.5rem;
-    font-weight: bold;
-    margin-bottom: 1rem;
-    padding: 0.5rem;
-    border-radius: 4px;
-}
-
-.running-systems .systems-header {
-    background-color: #d4edda;
-    color: #155724;
-}
-
-.stopped-systems .systems-header {
-    background-color: #f8d7da;
-    color: #721c24;
-}
-
-.unknown-systems .systems-header {
-    background-color: #fff3cd;
-    color: #856404;
-}
-
-.card {
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    margin-bottom: 1rem;
-}
-
-.card-header {
-    font-weight: bold;
-}
-
-.status-dot {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    margin-left: 5px;
-}
-
-.status-dot.running {
-    background-color: #28a745;
-    box-shadow: 0 0 5px #28a745;
-}
-
-.status-dot.stopped {
-    background-color: #dc3545;
-    box-shadow: 0 0 5px #dc3545;
-}
-
-.status-dot.unknown {
-    background-color: #ffc107;
-    box-shadow: 0 0 5px #ffc107;
-}
-
-.team-card {
-    background-color: #f8f9fa;
-    border-left: 5px solid #007bff;
-}
-
-.app-card {
-    background-color: #fff;
-    border-left: 5px solid #28a745;
-}
-
-.system-card {
-    background-color: #fff;
-    border-left: 5px solid #17a2b8;
-}
-
-.team-stats {
-    background-color: #e9ecef;
-    padding: 0.5rem;
-    border-radius: 4px;
-    margin-top: 0.5rem;
+.nav-tabs .nav-link:hover {
+    color: #0f172a;
+    background-color: #f1f5f9;
+    border-radius: 0.5rem;
 }
 
 .nav-tabs .nav-link.active {
-    font-weight: bold;
-    border-bottom: 3px solid #007bff;
+    color: #0f172a;
+    font-weight: 600;
+    background-color: #e0f2fe;
+    border-radius: 0.5rem;
 }
 
-.badge {
-    font-size: 0.8rem;
-    padding: 0.4em 0.6em;
+.tab-content {
+    animation: fadeIn 0.3s ease;
 }
 
-.badge.bg-running { background-color: #28a745 !important; }
-.badge.bg-stopped { background-color: #dc3545 !important; }
-.badge.bg-unknown { background-color: #ffc107 !important; }
-
-.status-dot {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    margin-left: 5px;
-}
-.status-running { background-color: #4CAF50; }
-.status-stopped { background-color: #f44336; }
-.status-unknown { background-color: #9e9e9e; }
-
-.system-url {
-    text-decoration: none;
-    margin-left: 5px;
+.card {
+    border: none;
+    border-radius: 1rem;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    transition: transform var(--transition-speed) ease;
 }
 
-.port-badge {
-    background-color: #e0e0e0;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 0.8em;
-    margin-left: 5px;
+.card:hover {
+    transform: translateY(-2px);
 }
 
-.systems-list, .dependencies-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
+.system-row {
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    border-radius: 0.75rem;
+    transition: all var(--transition-speed) ease;
 }
 
-.systems-list li, .dependencies-list li {
-    margin: 5px 0;
+.system-row.running {
+    background-color: var(--color-completed);
+    border: 1px solid var(--color-completed-border);
+}
+
+.system-row.stopped {
+    background-color: var(--color-not-started);
+    border: 1px solid var(--color-not-started-border);
+}
+
+.system-row.unknown {
+    background-color: var(--color-in-progress);
+    border: 1px solid var(--color-in-progress-border);
+}
+
+.status-badge {
+    padding: 0.35rem 0.75rem;
+    border-radius: 2rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.status-badge.running {
+    background-color: var(--color-completed);
+    color: #166534;
+}
+
+.status-badge.stopped {
+    background-color: var(--color-not-started);
+    color: #475569;
+}
+
+.status-badge.unknown {
+    background-color: var(--color-in-progress);
+    color: #0369a1;
+}
+
+.status-badge i {
+    font-size: 0.75rem;
+}
+
+.btn {
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    font-weight: 500;
+    transition: all var(--transition-speed) ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn i {
+    font-size: 1.1em;
+}
+
+.btn-primary {
+    background-color: #0ea5e9;
+    border-color: #0ea5e9;
+}
+
+.btn-primary:hover {
+    background-color: #0284c7;
+    border-color: #0284c7;
+}
+
+.btn-outline-primary {
+    color: #0ea5e9;
+    border-color: #0ea5e9;
+}
+
+.btn-outline-primary:hover {
+    background-color: #0ea5e9;
+    border-color: #0ea5e9;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+    from { transform: translateX(-20px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+.system-row {
+    animation: slideIn 0.3s ease;
+}
+
+[data-bs-toggle="tooltip"] {
+    cursor: help;
+}
+
+.teams-grid {
+    margin: -0.5rem;
+}
+
+.team-card {
+    height: 100%;
+    transition: all var(--transition-speed) ease;
+}
+
+.team-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 12px -4px rgba(0,0,0,0.1);
+}
+
+.section-title {
+    font-size: 0.875rem;
+    color: #64748b;
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.section-title i {
+    font-size: 1em;
+}
+
+.apps-list, .systems-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.app-item, .system-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: var(--color-not-started);
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.system-item {
+    background: transparent;
+    border: 1px solid var(--color-not-started-border);
+}
+
+.system-item .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.status-dot.running { background-color: var(--color-completed-border); }
+.status-dot.stopped { background-color: var(--color-not-started-border); }
+.status-dot.unknown { background-color: var(--color-in-progress-border); }
+
+.systems-preview {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.system-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+}
+
+.system-dot.running {
+    background-color: var(--color-completed);
+    border-color: var(--color-completed-border);
+}
+
+.system-dot.stopped {
+    background-color: var(--color-not-started);
+    border-color: var(--color-not-started-border);
+}
+
+.system-dot.unknown {
+    background-color: var(--color-in-progress);
+    border-color: var(--color-in-progress-border);
+}
+
+.more-systems {
+    font-size: 0.75rem;
+    color: #64748b;
+    background: var(--color-not-started);
+    padding: 0.25rem 0.5rem;
+    border-radius: 1rem;
+}
+
+.table > :not(caption) > * > * {
+    padding: 1rem;
+}
+
+.table tbody tr {
+    transition: all var(--transition-speed) ease;
+}
+
+.table tbody tr:hover {
+    background-color: var(--color-not-started);
 }
 </style>
 
@@ -1103,33 +1100,43 @@ function updateSystemsList() {
             if (unknownSystems) unknownSystems.innerHTML = '';
             
             systems.forEach(system => {
+                const statusText = {
+                    'running': '<i class="bi bi-check-circle-fill"></i> Running',
+                    'stopped': '<i class="bi bi-stop-circle-fill"></i> Stopped',
+                    'unknown': '<i class="bi bi-question-circle-fill"></i> Unknown'
+                }[system.status];
+                
                 const systemHtml = `
                     <div class="system-row ${system.status}">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
-                                <h5 class="mb-0">
+                                <h5 class="mb-1">
                                     ${system.name}
-                                    <span class="status-dot ${system.status}"></span>
+                                    <span class="status-badge ${system.status}" data-bs-toggle="tooltip" title="Last updated: ${new Date(system.last_checked).toLocaleString()}">
+                                        ${statusText}
+                                    </span>
                                 </h5>
-                                <small class="text-muted">Host: ${system.host}</small>
-                                ${system.last_checked ? 
-                                    `<small class="text-muted d-block">Last checked: ${new Date(system.last_checked).toLocaleString()}</small>` 
-                                    : ''}
+                                <div class="text-muted">
+                                    <small class="d-block">Host: ${system.host}</small>
+                                    ${system.port ? `<small class="d-block">Port: ${system.port}</small>` : ''}
+                                </div>
                             </div>
-                            <div class="d-flex align-items-center gap-2">
+                            <div class="d-flex align-items-center gap-3">
+                                ${system.webui_url ? `
+                                    <a href="${system.webui_url}" target="_blank" class="btn btn-outline-primary btn-sm" data-bs-toggle="tooltip" title="Open system web interface">
+                                        <i class="bi bi-box-arrow-up-right"></i>
+                                        Web UI
+                                    </a>
+                                ` : ''}
                                 <div class="form-check form-switch">
                                     <input class="form-check-input" type="checkbox" 
                                         ${system.status === 'running' ? 'checked' : ''} 
+                                        data-bs-toggle="tooltip"
+                                        title="${system.status === 'running' ? 'Stop system' : 'Start system'}"
                                         onchange="toggleSystemStatus('${system.id}', this)">
                                 </div>
                             </div>
                         </div>
-                        ${system.port ? `<div class="mt-1"><small class="text-muted">Port: ${system.port}</small></div>` : ''}
-                        ${system.webui_url ? `<div class="mt-2">
-                            <a href="${system.webui_url}" target="_blank" class="btn btn-sm btn-outline-primary">
-                                <i class="bi bi-box-arrow-up-right"></i> Open WebUI
-                            </a>
-                        </div>` : ''}
                     </div>
                 `;
                 
@@ -1140,6 +1147,12 @@ function updateSystemsList() {
                 } else {
                     if (unknownSystems) unknownSystems.insertAdjacentHTML('beforeend', systemHtml);
                 }
+            });
+            
+            // Reinitialize tooltips for new elements
+            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function(tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
             });
         })
         .catch(error => {
@@ -1257,114 +1270,223 @@ function updateTeamsList() {
     fetch('/api/teams')
         .then(response => response.json())
         .then(teams => {
-            const teamsList = document.getElementById('teams-list');
-            if (!teamsList) return;
+            const container = document.getElementById('teams-container');
+            if (!container) return;
             
-            teamsList.innerHTML = '';
-            teams.forEach(team => {
-                const teamHtml = `
-                    <div class="col-md-4 mb-4">
+            container.innerHTML = teams.map(team => {
+                const systems = team.systems || [];
+                const apps = team.applications || [];
+                
+                const systemsList = systems.slice(0, 5).map(sys => `
+                    <div class="system-item">
+                        <span class="status-dot ${sys.status}"></span>
+                        ${sys.name}
+                    </div>
+                `).join('');
+                
+                const appsList = apps.slice(0, 5).map(app => `
+                    <div class="app-item">
+                        <i class="bi bi-app"></i>
+                        ${app.name}
+                    </div>
+                `).join('');
+
+                return `
+                    <div class="col">
                         <div class="card team-card h-100">
                             <div class="card-body">
                                 <h5 class="card-title d-flex justify-content-between align-items-center">
                                     ${team.name}
-                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteTeam('${team._id}')">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
+                                    <div class="team-stats">
+                                        <span class="badge bg-primary" title="Applications">
+                                            <i class="bi bi-grid"></i> ${apps.length}
+                                        </span>
+                                        <span class="badge bg-secondary" title="Systems">
+                                            <i class="bi bi-pc"></i> ${systems.length}
+                                        </span>
+                                    </div>
                                 </h5>
-                                <div class="team-stats mt-3">
-                                    <div class="d-flex justify-content-between align-items-center mb-2">
-                                        <span><i class="bi bi-app-indicator"></i> Applications</span>
-                                        <span class="badge bg-primary">${team.application_count}</span>
+                                
+                                ${apps.length > 0 ? `
+                                    <div class="apps-section mt-3">
+                                        <h6 class="section-title">
+                                            <i class="bi bi-grid"></i> Applications
+                                            ${apps.length > 5 ? `
+                                                <small class="text-muted">(Showing 5 of ${apps.length})</small>
+                                                <button class="btn btn-link btn-sm p-0" onclick="showAllApps('${team._id}')">
+                                                    Show All
+                                                </button>
+                                            ` : ''}
+                                        </h6>
+                                        <div class="apps-list">
+                                            ${appsList}
+                                        </div>
                                     </div>
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <span><i class="bi bi-pc-display"></i> Systems</span>
-                                        <span class="badge bg-info">${team.systems_count}</span>
-                                    </div>
-                                </div>
-                                ${team.description ? `
-                                    <div class="mt-3">
-                                        <small class="text-muted">${team.description}</small>
+                                ` : ''}
+                                
+                                ${systems.length > 0 ? `
+                                    <div class="systems-section mt-3">
+                                        <h6 class="section-title">
+                                            <i class="bi bi-pc"></i> Systems
+                                            ${systems.length > 5 ? `
+                                                <small class="text-muted">(Showing 5 of ${systems.length})</small>
+                                                <button class="btn btn-link btn-sm p-0" onclick="showAllSystems('${team._id}')">
+                                                    Show All
+                                                </button>
+                                            ` : ''}
+                                        </h6>
+                                        <div class="systems-list">
+                                            ${systemsList}
+                                        </div>
                                     </div>
                                 ` : ''}
                             </div>
                         </div>
                     </div>
                 `;
-                teamsList.insertAdjacentHTML('beforeend', teamHtml);
-            });
-        })
-        .catch(error => {
-            console.error('Error updating teams:', error);
-            showAlert('danger', 'Failed to update teams list');
+            }).join('');
         });
 }
 
-// Update teams list every 10 seconds
-setInterval(updateTeamsList, 10000);
+function updateApplicationsList() {
+    fetch('/api/applications')
+        .then(response => response.json())
+        .then(applications => {
+            const container = document.getElementById('applications-container');
+            if (!container) return;
+            
+            container.innerHTML = applications.map(app => {
+                const systems = app.systems || [];
+                const systemStatuses = systems.map(s => s.status);
+                let overallStatus = 'unknown';
+                
+                if (systemStatuses.every(s => s === 'running')) {
+                    overallStatus = 'running';
+                } else if (systemStatuses.every(s => s === 'stopped')) {
+                    overallStatus = 'stopped';
+                } else if (systemStatuses.some(s => s === 'running')) {
+                    overallStatus = 'partial';
+                }
 
-// Initial update
-document.addEventListener('DOMContentLoaded', updateTeamsList);
-
-function handleImport(event) {
-    event.preventDefault();
-    const formData = new FormData();
-    const fileInput = document.querySelector('#file');
-    const importStatus = document.getElementById('importStatus');
-
-    if (!fileInput.files.length) {
-        showAlert('danger', 'Please select a file to import');
-        return;
-    }
-
-    const file = fileInput.files[0];
-    formData.append('file', file);
-    
-    showAlert('info', 'Importing data...', 0);
-    
-    fetch('/import', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        document.querySelectorAll('.alert-info').forEach(alert => {
-            bootstrap.Alert.getInstance(alert)?.close();
+                return `
+                    <tr>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-grid me-2"></i>
+                                <div>
+                                    <div class="fw-500">${app.name}</div>
+                                    <small class="text-muted">${systems.length} system${systems.length !== 1 ? 's' : ''}</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            ${app.team ? `
+                                <span class="badge bg-light text-dark">
+                                    <i class="bi bi-people"></i> ${app.team.name}
+                                </span>
+                            ` : '-'}
+                        </td>
+                        <td>
+                            <div class="systems-preview">
+                                ${systems.slice(0, 3).map(sys => `
+                                    <div class="system-dot ${sys.status}" 
+                                         data-bs-toggle="tooltip" 
+                                         title="${sys.name}: ${sys.status}">
+                                    </div>
+                                `).join('')}
+                                ${systems.length > 3 ? `
+                                    <span class="more-systems" 
+                                          data-bs-toggle="tooltip" 
+                                          title="${systems.slice(3).map(s => s.name).join(', ')}">
+                                        +${systems.length - 3}
+                                    </span>
+                                ` : ''}
+                            </div>
+                        </td>
+                        <td>
+                            <span class="status-badge ${overallStatus}">
+                                <i class="bi bi-${
+                                    overallStatus === 'running' ? 'check-circle-fill' :
+                                    overallStatus === 'stopped' ? 'stop-circle-fill' :
+                                    overallStatus === 'partial' ? 'dash-circle-fill' :
+                                    'question-circle-fill'
+                                }"></i>
+                                ${
+                                    overallStatus === 'running' ? 'All Running' :
+                                    overallStatus === 'stopped' ? 'All Stopped' :
+                                    overallStatus === 'partial' ? 'Partially Running' :
+                                    'Unknown'
+                                }
+                            </span>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" 
+                                    onclick="showApplicationDetails('${app._id}')"
+                                    data-bs-toggle="tooltip"
+                                    title="View application details">
+                                <i class="bi bi-info-circle"></i>
+                                Details
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            // Reinitialize tooltips
+            const tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+            tooltips.forEach(el => new bootstrap.Tooltip(el));
         });
+}
 
-        if (data.success) {
-            showAlert('success', data.message);
-            updateTeamsList();
-            updateSystemsList();
-        } else {
-            showAlert('danger', data.error);
-            if (data.errors && data.errors.length > 0) {
-                data.errors.forEach(error => {
-                    showAlert('warning', error);
-                });
-            }
-        }
-    })
-    .catch(error => {
-        console.error('Import error:', error);
-        showAlert('danger', 'Failed to import file');
-    })
-    .finally(() => {
-        fileInput.value = '';
-        const importModal = bootstrap.Modal.getInstance(document.getElementById('importModal'));
-        if (importModal) {
-            importModal.hide();
-        }
-    });
+function showAllApps(teamId) {
+    // Implement modal or expandable section for showing all apps
+}
+
+function showAllSystems(teamId) {
+    // Implement modal or expandable section for showing all systems
+}
+
+function showApplicationDetails(appId) {
+    // Implement modal for showing application details
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    const importForm = document.getElementById('importForm');
-    if (importForm) {
-        importForm.addEventListener('submit', handleImport);
+    // Initialize tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function(tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Update lists when tab is shown
+    const tabElements = document.querySelectorAll('a[data-bs-toggle="tab"]');
+    tabElements.forEach(tab => {
+        tab.addEventListener('shown.bs.tab', function (event) {
+            const targetId = event.target.getAttribute('href');
+            if (targetId === '#teams-table') {
+                updateTeamsList();
+            } else if (targetId === '#applications-table') {
+                updateApplicationsList();
+            } else if (targetId === '#systems') {
+                updateSystemsList();
+            }
+        });
+    });
+
+    // Initial update for active tab
+    const activeTab = document.querySelector('.nav-link.active');
+    if (activeTab) {
+        const targetId = activeTab.getAttribute('href');
+        if (targetId === '#teams-table') {
+            updateTeamsList();
+        } else if (targetId === '#applications-table') {
+            updateApplicationsList();
+        } else if (targetId === '#systems') {
+            updateSystemsList();
+        }
     }
 });
 </script>
+
 {% endblock %}
 
 {% block scripts %}
