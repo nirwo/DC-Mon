@@ -42,28 +42,38 @@ def get_applications():
     try:
         applications = Application.query.all()
         result = []
+        seen_apps = set()
+        
         for app in applications:
+            # Skip if we've already processed this app
+            if app.name in seen_apps:
+                continue
+                
+            seen_apps.add(app.name)
             app_dict = app.to_dict()
             instances = []
-            for instance in app.instances:
-                instance_dict = instance.to_dict()
-                try:
-                    # Check if host is reachable
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.settimeout(2)  # 2 second timeout
-                    port = instance.port or 80  # Default to 80 if no port specified
-                    status = sock.connect_ex((instance.host, port))
-                    sock.close()
-                    
-                    if status == 0:
-                        instance_dict['status'] = 'running'
-                    else:
-                        instance_dict['status'] = 'stopped'
-                except:
-                    instance_dict['status'] = 'error'
-                instances.append(instance_dict)
-            app_dict['instances'] = instances
-            result.append(app_dict)
+            
+            # Get all instances for apps with the same name
+            same_name_apps = Application.query.filter_by(name=app.name).all()
+            for same_app in same_name_apps:
+                for instance in same_app.instances:
+                    instance_dict = instance.to_dict()
+                    try:
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.settimeout(2)
+                        port = instance.port or 80
+                        status = sock.connect_ex((instance.host, port))
+                        sock.close()
+                        
+                        instance_dict['status'] = 'running' if status == 0 else 'stopped'
+                    except:
+                        instance_dict['status'] = 'error'
+                    instances.append(instance_dict)
+            
+            if instances:  # Only add if there are instances
+                app_dict['instances'] = instances
+                result.append(app_dict)
+                
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
