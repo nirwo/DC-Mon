@@ -109,12 +109,35 @@ def create_application():
 def delete_application(app_id):
     try:
         app = Application.query.get_or_404(app_id)
-        # Delete all associated instances first
         ApplicationInstance.query.filter_by(application_id=app_id).delete()
         db.session.delete(app)
         db.session.commit()
         return jsonify({'message': 'Application deleted successfully'})
     except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/applications/<int:app_id>', methods=['PUT'])
+def update_application(app_id):
+    try:
+        app = Application.query.get_or_404(app_id)
+        data = request.json
+        
+        app.name = data.get('name', app.name)
+        if 'team_id' in data:
+            app.team_id = data['team_id']
+            
+        if app.instances:
+            instance = app.instances[0]
+            instance.host = data.get('host', instance.host)
+            instance.port = data.get('port', instance.port)
+            instance.webui_url = data.get('webui_url', instance.webui_url)
+            instance.db_host = data.get('db_host', instance.db_host)
+        
+        db.session.commit()
+        return jsonify({'message': 'Application updated successfully'})
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 @main.route('/api/applications/<int:app_id>/systems', methods=['GET'])
@@ -194,6 +217,20 @@ def delete_system(system_id):
         db.session.commit()
         return jsonify({'message': 'System deleted successfully'})
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/teams/<int:team_id>', methods=['DELETE'])
+def delete_team(team_id):
+    try:
+        team = Team.query.get_or_404(team_id)
+        for app in team.applications:
+            ApplicationInstance.query.filter_by(application_id=app.id).delete()
+        Application.query.filter_by(team_id=team_id).delete()
+        db.session.delete(team)
+        db.session.commit()
+        return jsonify({'message': 'Team deleted successfully'})
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 @main.route('/preview_csv', methods=['POST'])

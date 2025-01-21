@@ -220,6 +220,47 @@
     </div>
 </div>
 
+<div class="modal fade" id="editApplicationModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Application</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editApplicationForm">
+                    <input type="hidden" id="editAppId">
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <input type="text" class="form-control" id="editAppName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Team</label>
+                        <select class="form-select" id="editTeamSelect" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Host</label>
+                        <input type="text" class="form-control" id="editAppHost" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Port</label>
+                        <input type="number" class="form-control" id="editAppPort">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Web UI URL</label>
+                        <input type="url" class="form-control" id="editAppWebUI">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">DB Host</label>
+                        <input type="text" class="form-control" id="editAppDBHost">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Update Application</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 // Terminal functions
 function log(type, message) {
@@ -300,12 +341,15 @@ async function loadApplications() {
                                 </div>
                             </div>
                             <div class="btn-group">
+                                <button class="btn btn-primary btn-sm" onclick="editApplication(${app.id})">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
                                 ${app.instances[0]?.webui_url ? `
                                     <a href="${app.instances[0].webui_url}" target="_blank" class="btn btn-outline-primary btn-sm">
                                         <i class="bi bi-box-arrow-up-right"></i>
                                     </a>
                                 ` : ''}
-                                <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteApplication(${app.id})">
+                                <button class="btn btn-danger btn-sm" onclick="deleteApplication(${app.id})">
                                     <i class="bi bi-trash"></i>
                                 </button>
                             </div>
@@ -335,6 +379,96 @@ async function loadApplications() {
 function toggleAppDetails(appId) {
     const card = document.querySelector(`#details-${appId}`).closest('.app-card');
     card.classList.toggle('expanded');
+}
+
+async function editApplication(appId) {
+    event.stopPropagation();
+    try {
+        const response = await fetch(`/api/applications/${appId}`);
+        if (!response.ok) throw new Error('Failed to fetch application');
+        const app = await response.json();
+        
+        document.getElementById('editAppId').value = app.id;
+        document.getElementById('editAppName').value = app.name;
+        document.getElementById('editTeamSelect').value = app.team_id;
+        
+        if (app.instances && app.instances[0]) {
+            document.getElementById('editAppHost').value = app.instances[0].host;
+            document.getElementById('editAppPort').value = app.instances[0].port || '';
+            document.getElementById('editAppWebUI').value = app.instances[0].webui_url || '';
+            document.getElementById('editAppDBHost').value = app.instances[0].db_host || '';
+        }
+        
+        const modal = new bootstrap.Modal(document.getElementById('editApplicationModal'));
+        modal.show();
+    } catch (error) {
+        log('error', `Failed to load application: ${error.message}`);
+    }
+}
+
+document.getElementById('editApplicationForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const appId = document.getElementById('editAppId').value;
+    
+    try {
+        const formData = {
+            name: document.getElementById('editAppName').value,
+            team_id: document.getElementById('editTeamSelect').value,
+            host: document.getElementById('editAppHost').value,
+            port: document.getElementById('editAppPort').value || null,
+            webui_url: document.getElementById('editAppWebUI').value || null,
+            db_host: document.getElementById('editAppDBHost').value || null
+        };
+        
+        const response = await fetch(`/api/applications/${appId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+        });
+        
+        if (!response.ok) throw new Error('Failed to update application');
+        
+        log('success', 'Application updated successfully');
+        bootstrap.Modal.getInstance(document.getElementById('editApplicationModal')).hide();
+        loadApplications();
+    } catch (error) {
+        log('error', `Failed to update application: ${error.message}`);
+    }
+});
+
+async function deleteApplication(appId) {
+    event.stopPropagation();
+    if (!confirm('Are you sure you want to delete this application?')) return;
+    
+    try {
+        const response = await fetch(`/api/applications/${appId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) throw new Error('Failed to delete application');
+        
+        log('success', 'Application deleted successfully');
+        loadApplications();
+    } catch (error) {
+        log('error', `Failed to delete application: ${error.message}`);
+    }
+}
+
+async function deleteTeam(teamId) {
+    if (!confirm('Are you sure you want to delete this team and all its applications?')) return;
+    
+    try {
+        const response = await fetch(`/api/teams/${teamId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) throw new Error('Failed to delete team');
+        
+        log('success', 'Team deleted successfully');
+        loadApplications();
+    } catch (error) {
+        log('error', `Failed to delete team: ${error.message}`);
+    }
 }
 
 // Event Listeners
