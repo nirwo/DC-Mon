@@ -242,25 +242,37 @@ def import_apps():
         errors = []
         
         required_fields = ['name', 'team_name', 'host']
+        headers = csv_input.fieldnames
+        
+        # Validate headers
+        if not headers:
+            return jsonify({'error': 'CSV file is empty or has no headers'}), 400
+            
+        missing_headers = [field for field in required_fields if field not in headers]
+        if missing_headers:
+            return jsonify({
+                'error': f'Missing required columns: {", ".join(missing_headers)}. Required columns are: {", ".join(required_fields)}'
+            }), 400
+        
         for row_num, row in enumerate(csv_input, start=2):  # start=2 to account for header row
             try:
                 # Validate required fields
-                missing_fields = [field for field in required_fields if not row.get(field)]
+                missing_fields = [field for field in required_fields if not row.get(field, '').strip()]
                 if missing_fields:
                     errors.append(f"Row {row_num}: Missing required fields: {', '.join(missing_fields)}")
                     skipped += 1
                     continue
 
                 # Find or create team
-                team = Team.query.filter_by(name=row['team_name']).first()
+                team = Team.query.filter_by(name=row['team_name'].strip()).first()
                 if not team:
-                    team = Team(name=row['team_name'])
+                    team = Team(name=row['team_name'].strip())
                     db.session.add(team)
                     db.session.flush()
 
                 # Create application
                 app = Application(
-                    name=row['name'],
+                    name=row['name'].strip(),
                     team_id=team.id
                 )
                 db.session.add(app)
@@ -269,10 +281,10 @@ def import_apps():
                 # Create instance
                 instance = ApplicationInstance(
                     application_id=app.id,
-                    host=row['host'],
-                    port=row.get('port'),
-                    webui_url=row.get('webui_url'),
-                    db_host=row.get('db_host'),
+                    host=row['host'].strip(),
+                    port=int(row['port'].strip()) if row.get('port', '').strip().isdigit() else None,
+                    webui_url=row.get('webui_url', '').strip() or None,
+                    db_host=row.get('db_host', '').strip() or None,
                     status='running'
                 )
                 db.session.add(instance)

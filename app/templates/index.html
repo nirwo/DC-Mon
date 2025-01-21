@@ -554,6 +554,17 @@ function copyError(alertId) {
     });
 }
 
+function getStatusBadgeHtml(status) {
+    const statusColors = {
+        'running': 'success',
+        'stopped': 'danger',
+        'unknown': 'secondary',
+        'error': 'warning'
+    };
+    const color = statusColors[status] || 'secondary';
+    return `<span class="badge bg-${color}">${status}</span>`;
+}
+
 // Alert handling
 function deleteTeam(teamId) {
     if (!confirm('Are you sure you want to delete this team?')) {
@@ -1022,6 +1033,62 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadTeams(),
         loadApplications()
     ]);
+});
+
+async function handleImport(e) {
+    e.preventDefault();
+    const formData = new FormData();
+    const file = document.getElementById('csvFile').files[0];
+    if (!file) {
+        showAlert('error', 'Please select a file');
+        return;
+    }
+    formData.append('file', file);
+
+    try {
+        const response = await fetch('/import_apps', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || 'Import failed');
+        }
+
+        // Show success message if any records were imported
+        if (result.imported > 0) {
+            showAlert('success', `Successfully imported ${result.imported} applications.`);
+            document.getElementById('importForm').reset();
+            const modal = bootstrap.Modal.getInstance(document.getElementById('importModal'));
+            if (modal) modal.hide();
+            await Promise.all([loadTeams(), loadApplications()]);
+        }
+
+        // Show warnings for skipped records
+        if (result.skipped > 0) {
+            showAlert('warning', `Skipped ${result.skipped} records.`, 10000);
+        }
+
+        // Show each error in a separate alert
+        if (result.errors && result.errors.length > 0) {
+            result.errors.forEach((error, index) => {
+                setTimeout(() => {
+                    showAlert('error', error);
+                }, index * 300);
+            });
+        }
+    } catch (error) {
+        showAlert('error', `Import failed: ${error.message}`);
+    }
+}
+
+// Add import form listener
+document.addEventListener('DOMContentLoaded', function() {
+    const importForm = document.getElementById('importForm');
+    if (importForm) {
+        importForm.addEventListener('submit', handleImport);
+    }
 });
 </script>
 {% endblock %}
