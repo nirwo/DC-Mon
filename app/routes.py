@@ -27,12 +27,14 @@ def get_teams():
 def delete_team(team_id):
     try:
         team = Team.query.get_or_404(team_id)
-        # Delete all associated applications first
+        for app in team.applications:
+            ApplicationInstance.query.filter_by(application_id=app.id).delete()
         Application.query.filter_by(team_id=team_id).delete()
         db.session.delete(team)
         db.session.commit()
         return jsonify({'message': 'Team deleted successfully'})
     except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 @main.route('/api/applications', methods=['GET'])
@@ -217,20 +219,6 @@ def delete_system(system_id):
         db.session.commit()
         return jsonify({'message': 'System deleted successfully'})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/api/teams/<int:team_id>', methods=['DELETE'])
-def delete_team(team_id):
-    try:
-        team = Team.query.get_or_404(team_id)
-        for app in team.applications:
-            ApplicationInstance.query.filter_by(application_id=app.id).delete()
-        Application.query.filter_by(team_id=team_id).delete()
-        db.session.delete(team)
-        db.session.commit()
-        return jsonify({'message': 'Team deleted successfully'})
-    except Exception as e:
-        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 @main.route('/preview_csv', methods=['POST'])
