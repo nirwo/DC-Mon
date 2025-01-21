@@ -5,6 +5,7 @@ import tempfile
 import csv
 import os
 import io
+import traceback
 
 main = Blueprint('main', __name__)
 
@@ -222,91 +223,83 @@ def preview_csv():
         return jsonify({"error": str(e)}), 500
 
 @main.route('/import_apps', methods=['POST'])
-def import_data():
+def import_apps():
     if 'file' not in request.files:
-        return jsonify({"error": "No file provided"}), 400
+        return jsonify({'error': 'No file provided'}), 400
     
     file = request.files['file']
-    if not file.filename.endswith('.csv'):
-        return jsonify({"error": "Invalid file format. Please upload a CSV file"}), 400
-    
-    imported_count = 0
-    skipped_count = 0
-    errors = []
-    
+    if not file or not file.filename.endswith('.csv'):
+        return jsonify({'error': 'Invalid file format. Please upload a CSV file'}), 400
+
     try:
-        # Read CSV file
+        # Read CSV file into memory
         stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
-        reader = csv.DictReader(stream)
+        csv_input = csv.DictReader(stream)
         
-        for row in reader:
+        imported = 0
+        skipped = 0
+        errors = []
+        
+        required_fields = ['name', 'team_name', 'host']
+        for row_num, row in enumerate(csv_input, start=2):  # start=2 to account for header row
             try:
                 # Validate required fields
-                required_fields = ['name', 'team', 'host']
-                if not all(field in row and row[field].strip() for field in required_fields):
-                    missing = [f for f in required_fields if f not in row or not row[f].strip()]
-                    errors.append(f"Row skipped: Missing required fields {', '.join(missing)}")
-                    skipped_count += 1
+                missing_fields = [field for field in required_fields if not row.get(field)]
+                if missing_fields:
+                    errors.append(f"Row {row_num}: Missing required fields: {', '.join(missing_fields)}")
+                    skipped += 1
                     continue
 
-                # Get or create team
-                team = Team.query.filter_by(name=row['team'].strip()).first()
+                # Find or create team
+                team = Team.query.filter_by(name=row['team_name']).first()
                 if not team:
-                    team = Team(name=row['team'].strip())
+                    team = Team(name=row['team_name'])
                     db.session.add(team)
                     db.session.flush()
 
                 # Create application
                 app = Application(
-                    name=row['name'].strip(),
-                    team_id=team.id,
-                    webui_url=row.get('webui_url', '').strip() or None
+                    name=row['name'],
+                    team_id=team.id
                 )
                 db.session.add(app)
                 db.session.flush()
 
                 # Create instance
-                port = row.get('port', '').strip()
                 instance = ApplicationInstance(
                     application_id=app.id,
-                    host=row['host'].strip(),
-                    port=int(port) if port.isdigit() else None,
-                    webui_url=row.get('webui_url', '').strip() or None,
-                    db_host=row.get('db_host', '').strip() or None,
+                    host=row['host'],
+                    port=row.get('port'),
+                    webui_url=row.get('webui_url'),
+                    db_host=row.get('db_host'),
                     status='running'
                 )
                 db.session.add(instance)
-                imported_count += 1
+                imported += 1
 
             except Exception as e:
-                current_app.logger.error(f"Error importing row: {str(e)}")
-                errors.append(f"Row skipped: {str(e)}")
-                skipped_count += 1
-                db.session.rollback()
+                errors.append(f"Row {row_num}: {str(e)}")
+                skipped += 1
                 continue
 
         db.session.commit()
         
-        message = f"Successfully imported {imported_count} applications."
-        if skipped_count > 0:
-            message += f" Skipped {skipped_count} entries."
-        if errors:
-            message += f"\nErrors: {'; '.join(errors)}"
+        response = {
+            'imported': imported,
+            'skipped': skipped,
+            'message': f'Successfully imported {imported} applications'
+        }
         
-        return jsonify({
-            "status": "success",
-            "imported": imported_count,
-            "skipped": skipped_count,
-            "message": message,
-            "errors": errors
-        })
+        if errors:
+            response['errors'] = errors
+            
+        return jsonify(response)
 
     except Exception as e:
         db.session.rollback()
         return jsonify({
-            "error": f"Import failed: {str(e)}",
-            "imported": imported_count,
-            "skipped": skipped_count
+            'error': f'Import failed: {str(e)}',
+            'details': traceback.format_exc()
         }), 500
 
 @main.route('/shutdown_app/<int:app_id>', methods=['POST'])
