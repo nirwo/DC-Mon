@@ -3,7 +3,7 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
+<div class="container mt-4 main-content">
     <div class="row mb-4">
         <div class="col">
             <div class="d-flex justify-content-between align-items-center">
@@ -214,8 +214,16 @@
     </div>
 </div>
 
-<div id="alertContainer" class="position-fixed top-0 end-0 p-3" style="z-index: 1050;">
-    <!-- Alerts will be inserted here -->
+<!-- Terminal Alerts -->
+<div class="terminal-alerts" id="terminalAlerts">
+    <div class="terminal-header">
+        <span class="terminal-title">System Logs</span>
+        <div class="terminal-controls">
+            <button onclick="clearAlerts()">Clear</button>
+            <button onclick="toggleTerminal()">Toggle</button>
+        </div>
+    </div>
+    <div id="alertsContainer"></div>
 </div>
 
 <style>
@@ -472,62 +480,134 @@
 }
 
 .mapping-row { margin-bottom: 10px; }
+
+.terminal-alerts {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 200px;
+    background: #1e1e1e;
+    color: #fff;
+    font-family: monospace;
+    overflow-y: auto;
+    z-index: 1050;
+    border-top: 2px solid #333;
+    padding: 10px;
+}
+
+.terminal-alerts .alert {
+    background: transparent;
+    color: #fff;
+    border: none;
+    padding: 5px 10px;
+    margin-bottom: 5px;
+    font-size: 14px;
+}
+
+.terminal-alerts .alert-success {
+    color: #00ff00;
+}
+
+.terminal-alerts .alert-error {
+    color: #ff4444;
+}
+
+.terminal-alerts .alert-warning {
+    color: #ffbb33;
+}
+
+.terminal-alerts .alert-info {
+    color: #33b5e5;
+}
+
+.terminal-alerts .timestamp {
+    color: #888;
+    margin-right: 10px;
+}
+
+.main-content {
+    margin-bottom: 220px;
+}
+
+.terminal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #333;
+    padding-bottom: 5px;
+    margin-bottom: 10px;
+}
+
+.terminal-title {
+    color: #888;
+    font-size: 12px;
+}
+
+.terminal-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.terminal-controls button {
+    background: transparent;
+    border: 1px solid #444;
+    color: #888;
+    padding: 2px 8px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.terminal-controls button:hover {
+    background: #333;
+}
 </style>
 
 <script>
 // Utility Functions
-function showAlert(type, message, timeout = 5000) {
-    const alertsContainer = document.getElementById('alerts');
+function showAlert(type, message) {
+    const alertsContainer = document.getElementById('alertsContainer');
+    const timestamp = new Date().toLocaleTimeString();
+    
     const alertDiv = document.createElement('div');
-    const id = 'alert-' + Date.now();
-    alertDiv.id = id;
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.className = `alert alert-${type}`;
+    alertDiv.innerHTML = `
+        <span class="timestamp">[${timestamp}]</span>
+        <span class="message">${message}</span>
+    `;
     
-    // For error messages, keep them visible longer and add a copy button
-    if (type === 'error') {
-        timeout = 15000;
-        alertDiv.innerHTML = `
-            ${message}
-            <button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="copyError('${id}')">
-                <i class="bi bi-clipboard"></i> Copy
-            </button>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
+    alertsContainer.appendChild(alertDiv);
+    alertsContainer.scrollTop = alertsContainer.scrollHeight;
+    
+    // Keep only last 50 messages
+    const alerts = alertsContainer.getElementsByClassName('alert');
+    while (alerts.length > 50) {
+        alertsContainer.removeChild(alerts[0]);
+    }
+}
+
+function clearAlerts() {
+    document.getElementById('alertsContainer').innerHTML = '';
+    showAlert('info', 'Terminal cleared');
+}
+
+function toggleTerminal() {
+    const terminal = document.getElementById('terminalAlerts');
+    if (terminal.style.display === 'none') {
+        terminal.style.display = 'block';
+        document.querySelector('.main-content').style.marginBottom = '220px';
     } else {
-        alertDiv.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-    }
-    
-    // Remove old alerts of the same type
-    const oldAlerts = alertsContainer.querySelectorAll(`.alert-${type}`);
-    oldAlerts.forEach(alert => alert.remove());
-    
-    // Add new alert
-    alertsContainer.insertBefore(alertDiv, alertsContainer.firstChild);
-    
-    if (timeout > 0) {
-        setTimeout(() => {
-            if (alertDiv && alertDiv.parentNode) {
-                bootstrap.Alert.getOrCreateInstance(alertDiv).close();
-            }
-        }, timeout);
+        terminal.style.display = 'none';
+        document.querySelector('.main-content').style.marginBottom = '20px';
     }
 }
 
-function copyError(alertId) {
-    const alertDiv = document.getElementById(alertId);
-    const text = alertDiv.textContent.trim();
-    navigator.clipboard.writeText(text).then(() => {
-        const btn = alertDiv.querySelector('.btn-outline-danger');
-        btn.innerHTML = '<i class="bi bi-check"></i> Copied';
-        setTimeout(() => {
-            btn.innerHTML = '<i class="bi bi-clipboard"></i> Copy';
-        }, 2000);
-    });
-}
+// Initialize terminal
+document.addEventListener('DOMContentLoaded', () => {
+    showAlert('info', 'System initialized');
+});
 
+// Utility Functions
 function getStatusBadgeHtml(status) {
     const statusColors = {
         'running': 'success',
