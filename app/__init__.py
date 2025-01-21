@@ -1,32 +1,26 @@
-import os
 from flask import Flask
-from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-from mongoengine import connect, disconnect
+from flask_cors import CORS
+import os
 
 db = SQLAlchemy()
 
 def create_app():
-    app = Flask(__name__)
+    app = Flask(__name__, 
+                static_folder='static',
+                template_folder='templates')
+    
     CORS(app)
     
-    # Configure SQLAlchemy
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///db.sqlite')
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///app.db')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    
     db.init_app(app)
     
-    # Import and register blueprints
-    from app.routes import main as main_bp
-    app.register_blueprint(main_bp)
+    from app.routes import main as main_blueprint
+    app.register_blueprint(main_blueprint)
     
     with app.app_context():
-        # Create SQLite tables
         db.create_all()
-        
-        # Initialize MongoDB connection
-        mongo_uri = os.environ.get('MONGODB_URI', 'mongodb://mongo:27017/shutdown_manager')
-        disconnect()  # Disconnect any existing connections
-        connect(host=mongo_uri)
-        app.logger.info("Successfully connected to MongoDB")
-            
+    
     return app

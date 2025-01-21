@@ -1,12 +1,11 @@
-from flask import Blueprint, render_template, jsonify, request, current_app
-from app.models import Team, Application, System, ApplicationInstance
+from flask import Blueprint, jsonify, request, current_app, render_template
+from app.models import Team, Application, ApplicationInstance
 from app import db
-import logging
+import tempfile
 import csv
 import os
-import tempfile
+import io
 
-logger = logging.getLogger(__name__)
 main = Blueprint('main', __name__)
 
 @main.route('/')
@@ -19,7 +18,6 @@ def get_teams():
         teams = Team.query.all()
         return jsonify([team.to_dict() for team in teams])
     except Exception as e:
-        logger.error(f"Error getting teams: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @main.route('/api/teams/<int:team_id>', methods=['DELETE'])
@@ -32,7 +30,6 @@ def delete_team(team_id):
         db.session.commit()
         return jsonify({'message': 'Team deleted successfully'})
     except Exception as e:
-        logger.error(f"Error deleting team: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @main.route('/api/applications', methods=['GET'])
@@ -53,7 +50,6 @@ def delete_application(app_id):
         db.session.commit()
         return jsonify({'message': 'Application deleted successfully'})
     except Exception as e:
-        logger.error(f"Error deleting application: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @main.route('/api/applications/<int:app_id>/systems', methods=['GET'])
@@ -133,7 +129,6 @@ def delete_system(system_id):
         db.session.commit()
         return jsonify({'message': 'System deleted successfully'})
     except Exception as e:
-        logger.error(f"Error deleting system: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @main.route('/preview_csv', methods=['POST'])
@@ -176,68 +171,91 @@ def preview_csv():
 
 @main.route('/import_apps', methods=['POST'])
 def import_data():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+    
+    file = request.files['file']
+    if not file.filename.endswith('.csv'):
+        return jsonify({"error": "Invalid file format. Please upload a CSV file"}), 400
+    
+    imported_count = 0
+    skipped_count = 0
+    errors = []
+    
     try:
-        if 'file' not in request.files:
-            return jsonify({"error": "No file provided"}), 400
+        # Read CSV file
+        stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+        reader = csv.DictReader(stream)
         
-        file = request.files['file']
-        if not file.filename.endswith('.csv'):
-            return jsonify({"error": "Invalid file format. Please upload a CSV file"}), 400
+        for row in reader:
+            try:
+                # Validate required fields
+                required_fields = ['name', 'team', 'host']
+                if not all(field in row and row[field].strip() for field in required_fields):
+                    missing = [f for f in required_fields if f not in row or not row[f].strip()]
+                    errors.append(f"Row skipped: Missing required fields {', '.join(missing)}")
+                    skipped_count += 1
+                    continue
+
+                # Get or create team
+                team = Team.query.filter_by(name=row['team'].strip()).first()
+                if not team:
+                    team = Team(name=row['team'].strip())
+                    db.session.add(team)
+                    db.session.flush()
+
+                # Create application
+                app = Application(
+                    name=row['name'].strip(),
+                    team_id=team.id,
+                    webui_url=row.get('webui_url', '').strip() or None
+                )
+                db.session.add(app)
+                db.session.flush()
+
+                # Create instance
+                port = row.get('port', '').strip()
+                instance = ApplicationInstance(
+                    application_id=app.id,
+                    host=row['host'].strip(),
+                    port=int(port) if port.isdigit() else None,
+                    webui_url=row.get('webui_url', '').strip() or None,
+                    db_host=row.get('db_host', '').strip() or None,
+                    status='running'
+                )
+                db.session.add(instance)
+                imported_count += 1
+
+            except Exception as e:
+                current_app.logger.error(f"Error importing row: {str(e)}")
+                errors.append(f"Row skipped: {str(e)}")
+                skipped_count += 1
+                db.session.rollback()
+                continue
+
+        db.session.commit()
         
-        imported_count = 0
-        skipped_count = 0
-        
-        # Create a temporary file to store the uploaded content
-        with tempfile.NamedTemporaryFile(mode='wb', delete=False) as temp_file:
-            file.save(temp_file.name)
-            
-            with open(temp_file.name, 'r') as csvfile:
-                reader = csv.DictReader(csvfile)
-                for row in reader:
-                    try:
-                        # Get or create team
-                        team = Team.query.filter_by(name=row['team']).first()
-                        if not team:
-                            team = Team(name=row['team'])
-                            db.session.add(team)
-                            db.session.flush()
-                        
-                        # Create application
-                        app = Application(
-                            name=row['name'],
-                            team_id=team.id,
-                            webui_url=row.get('webui_url')
-                        )
-                        db.session.add(app)
-                        db.session.flush()
-                        
-                        # Create instance
-                        instance = ApplicationInstance(
-                            application_id=app.id,
-                            host=row['host'],
-                            port=int(row['port']) if row.get('port') else None,
-                            webui_url=row.get('webui_url'),
-                            db_host=row.get('db_host'),
-                            status='running'
-                        )
-                        db.session.add(instance)
-                        imported_count += 1
-                    except Exception as e:
-                        current_app.logger.error(f"Error importing row: {str(e)}")
-                        skipped_count += 1
-                        continue
-            
-            db.session.commit()
-            os.unlink(temp_file.name)
+        message = f"Successfully imported {imported_count} applications."
+        if skipped_count > 0:
+            message += f" Skipped {skipped_count} entries."
+        if errors:
+            message += f"\nErrors: {'; '.join(errors)}"
         
         return jsonify({
             "status": "success",
             "imported": imported_count,
-            "skipped": skipped_count
+            "skipped": skipped_count,
+            "message": message,
+            "errors": errors
         })
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": f"Import failed: {str(e)}",
+            "imported": imported_count,
+            "skipped": skipped_count
+        }), 500
 
 @main.route('/shutdown_app/<int:app_id>', methods=['POST'])
 def shutdown_app(app_id):

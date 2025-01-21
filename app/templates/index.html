@@ -3,95 +3,42 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <div class="row mb-4">
-        <div class="col">
+<div class="container-fluid mt-4">
+    <div id="alerts"></div>
+
+    <!-- Main Content -->
+    <div class="row g-4">
+        <!-- Teams List -->
+        <div class="col-12">
             <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Actions</h5>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Teams</h5>
+                    <div>
+                        <button class="btn btn-primary btn-sm me-2" onclick="showAddTeamModal()">
+                            <i class="bi bi-plus-lg"></i> Add Team
+                        </button>
+                        <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#importModal">
+                            <i class="bi bi-upload"></i> Import
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body">
-                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal">Import Data</button>
-                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTeamModal">Add Team</button>
-                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addApplicationModal">Add Application</button>
-                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSystemModal">Add System</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
-        <li class="nav-item">
-            <a class="nav-link active" id="applications-tab" data-bs-toggle="tab" href="#applications" role="tab">Applications</a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" id="teams-tab" data-bs-toggle="tab" href="#teams" role="tab">Teams</a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" id="systems-tab" data-bs-toggle="tab" href="#systems" role="tab">Systems</a>
-        </li>
-    </ul>
-
-    <div class="tab-content">
-        <div class="tab-pane fade show active" id="applications" role="tabpanel">
-            <div class="row">
-                <div class="col-md-4">
-                    <div class="card">
-                        <div class="card-header bg-light">
-                            <h5 class="mb-0">Not Started</h5>
-                        </div>
-                        <div class="card-body" id="notStartedList" ondrop="drop(event)" ondragover="allowDrop(event)">
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card">
-                        <div class="card-header bg-light">
-                            <h5 class="mb-0">In Progress</h5>
-                        </div>
-                        <div class="card-body" id="inProgressList" ondrop="drop(event)" ondragover="allowDrop(event)">
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card">
-                        <div class="card-header bg-light">
-                            <h5 class="mb-0">Completed</h5>
-                        </div>
-                        <div class="card-body" id="completedList" ondrop="drop(event)" ondragover="allowDrop(event)">
-                        </div>
-                    </div>
+                    <div id="teamsList" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-4"></div>
                 </div>
             </div>
         </div>
 
-        <div class="tab-pane fade" id="teams" role="tabpanel">
-            <div class="row">
-                <div class="col">
-                    <div id="teamsList"></div>
+        <!-- Applications List -->
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Applications</h5>
+                    <button class="btn btn-primary btn-sm" onclick="showAddAppModal()">
+                        <i class="bi bi-plus-lg"></i> Add Application
+                    </button>
                 </div>
-            </div>
-        </div>
-
-        <div class="tab-pane fade" id="systems" role="tabpanel">
-            <div class="row">
-                <div class="col">
-                    <div class="table-responsive">
-                        <table class="table table-striped">
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Application</th>
-                                    <th>Host</th>
-                                    <th>Port</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="systemsList">
-                            </tbody>
-                        </table>
-                    </div>
+                <div class="card-body">
+                    <div id="applicationsList" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4"></div>
                 </div>
             </div>
         </div>
@@ -197,18 +144,25 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Import Data</h5>
+                <h5 class="modal-title">Import Applications</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div id="importStatus"></div>
-                <form id="importForm">
+                <div class="alert alert-info">
+                    CSV file should have these columns:
+                    <ul>
+                        <li>name (required)</li>
+                        <li>team (required)</li>
+                        <li>host (required)</li>
+                        <li>port (optional)</li>
+                        <li>webui_url (optional)</li>
+                        <li>db_host (optional)</li>
+                    </ul>
+                </div>
+                <form id="importForm" enctype="multipart/form-data">
                     <div class="mb-3">
-                        <label class="form-label">CSV File</label>
-                        <input type="file" class="form-control" id="file" accept=".csv" required>
-                        <small class="text-muted">
-                            File should have columns: team, application, system, host, port (optional), webui_url (optional)
-                        </small>
+                        <label for="csvFile" class="form-label">Select CSV File</label>
+                        <input type="file" class="form-control" id="csvFile" name="file" accept=".csv" required>
                     </div>
                     <button type="submit" class="btn btn-primary">Import</button>
                 </form>
@@ -908,30 +862,16 @@ function updateTeamsList() {
             teamsList.innerHTML = '';
             teams.forEach(team => {
                 const teamHtml = `
-                    <div class="col-md-4 mb-4">
-                        <div class="card team-card h-100">
+                    <div class="col">
+                        <div class="card h-100">
                             <div class="card-body">
-                                <h5 class="card-title d-flex justify-content-between align-items-center">
-                                    ${team.name}
-                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteTeam('${team._id}')">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
-                                </h5>
-                                <div class="team-stats mt-3">
-                                    <div class="d-flex justify-content-between align-items-center mb-2">
-                                        <span><i class="bi bi-app-indicator"></i> Applications</span>
-                                        <span class="badge bg-primary">${team.application_count}</span>
-                                    </div>
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <span><i class="bi bi-pc-display"></i> Systems</span>
-                                        <span class="badge bg-info">${team.systems_count}</span>
-                                    </div>
-                                </div>
-                                ${team.description ? `
-                                    <div class="mt-3">
-                                        <small class="text-muted">${team.description}</small>
-                                    </div>
-                                ` : ''}
+                                <h5 class="card-title">${team.name}</h5>
+                                <p class="card-text text-muted">Team ID: ${team.id}</p>
+                            </div>
+                            <div class="card-footer bg-transparent border-top-0">
+                                <button class="btn btn-danger btn-sm float-end" onclick="deleteTeam(${team.id})">
+                                    <i class="bi bi-trash"></i> Delete
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -945,108 +885,128 @@ function updateTeamsList() {
         });
 }
 
-function handleImport(event) {
-    event.preventDefault();
-    const formData = new FormData();
-    const fileInput = document.querySelector('#file');
-    const importStatus = document.getElementById('importStatus');
-
-    if (!fileInput.files.length) {
-        showAlert('danger', 'Please select a file to import');
-        return;
-    }
-
-    const file = fileInput.files[0];
-    if (!file.name.endsWith('.csv')) {
-        showAlert('danger', 'Please select a CSV file');
-        return;
-    }
-
-    formData.append('file', file);
-    
-    // Show loading state
-    showAlert('info', 'Importing data...', 0);
-    if (importStatus) {
-        importStatus.innerHTML = `
-            <div class="alert alert-info">
-                <div class="spinner-border spinner-border-sm me-2" role="status">
-                    <span class="visually-hidden">Loading...</span>
-                </div>
-                Importing ${file.name}...
-            </div>
-        `;
-    }
-
-    fetch('/import', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        // Clear loading message
-        document.querySelectorAll('.alert-info').forEach(alert => {
-            bootstrap.Alert.getInstance(alert)?.close();
-        });
-
-        if (data.success) {
-            showAlert('success', `Successfully imported data from ${file.name}`);
-            
-            // Show details if there are any
-            if (data.details) {
-                let details = `<div class="mt-2"><strong>Imported:</strong><ul>`;
-                if (data.details.teams) details += `<li>${data.details.teams} teams</li>`;
-                if (data.details.applications) details += `<li>${data.details.applications} applications</li>`;
-                if (data.details.systems) details += `<li>${data.details.systems} systems</li>`;
-                details += '</ul></div>';
-                
-                if (importStatus) {
-                    importStatus.innerHTML = `
-                        <div class="alert alert-success">
-                            <h6>Import Successful!</h6>
-                            ${details}
-                        </div>
-                    `;
-                }
-            }
-            
-            // Refresh lists
-            updateTeamsList();
-            updateSystemsList();
-            
-        } else {
-            showAlert('danger', `Import failed: ${data.error}`);
-            if (importStatus) {
-                importStatus.innerHTML = `
-                    <div class="alert alert-danger">
-                        <h6>Import Failed</h6>
-                        <div class="mt-2">${data.error}</div>
+async function loadTeams() {
+    try {
+        const response = await fetch('/api/teams');
+        const teams = await response.json();
+        
+        // Update teams list
+        const teamsList = document.getElementById('teamsList');
+        teamsList.innerHTML = teams.map(team => `
+            <div class="col">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">${team.name}</h5>
+                        <p class="card-text text-muted">Team ID: ${team.id}</p>
                     </div>
-                `;
-            }
-        }
-    })
-    .catch(error => {
-        console.error('Import error:', error);
-        showAlert('danger', 'Failed to import file');
-        if (importStatus) {
-            importStatus.innerHTML = `
-                <div class="alert alert-danger">
-                    <h6>Import Error</h6>
-                    <div class="mt-2">An unexpected error occurred during import.</div>
+                    <div class="card-footer bg-transparent border-top-0">
+                        <button class="btn btn-danger btn-sm float-end" onclick="deleteTeam(${team.id})">
+                            <i class="bi bi-trash"></i> Delete
+                        </button>
+                    </div>
                 </div>
-            `;
-        }
-    })
-    .finally(() => {
-        fileInput.value = '';
-    });
+            </div>
+        `).join('');
+        
+        // Update team select in add application form
+        const teamSelect = document.getElementById('teamSelect');
+        teamSelect.innerHTML = teams.map(team => 
+            `<option value="${team.id}">${team.name}</option>`
+        ).join('');
+    } catch (error) {
+        showAlert('error', `Failed to load teams: ${error.message}`);
+    }
+}
+
+async function loadApplications() {
+    try {
+        const [appsResponse, teamsResponse] = await Promise.all([
+            fetch('/api/applications'),
+            fetch('/api/teams')
+        ]);
+        
+        const applications = await appsResponse.json();
+        const teams = await teamsResponse.json();
+        const teamsMap = Object.fromEntries(teams.map(team => [team.id, team.name]));
+        
+        document.getElementById('applicationsList').innerHTML = applications.map(app => `
+            <div class="col">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">${app.name}</h5>
+                        <div class="mb-2">
+                            <span class="badge bg-info">${teamsMap[app.team_id]}</span>
+                            ${getStatusBadgeHtml(app.instances[0]?.status || 'unknown')}
+                        </div>
+                        <div class="small text-muted mb-2">
+                            <div><strong>Host:</strong> ${app.instances[0]?.host || '-'}</div>
+                            <div><strong>Port:</strong> ${app.instances[0]?.port || '-'}</div>
+                        </div>
+                    </div>
+                    <div class="card-footer bg-transparent border-top-0">
+                        <div class="btn-group float-end">
+                            ${app.instances[0]?.webui_url ? `
+                                <a href="${app.instances[0].webui_url}" target="_blank" class="btn btn-outline-primary btn-sm">
+                                    <i class="bi bi-box-arrow-up-right"></i> Web UI
+                                </a>
+                            ` : ''}
+                            <button class="btn btn-danger btn-sm" onclick="deleteApplication(${app.id})">
+                                <i class="bi bi-trash"></i> Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        showAlert('error', `Failed to load applications: ${error.message}`);
+    }
 }
 
 // Add import form listener
 document.addEventListener('DOMContentLoaded', function() {
     const importForm = document.getElementById('importForm');
     if (importForm) {
-        importForm.addEventListener('submit', handleImport);
+        importForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            const file = document.getElementById('csvFile').files[0];
+            if (!file) {
+                showAlert('error', 'Please select a file');
+                return;
+            }
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/import_apps', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.error || 'Import failed');
+                }
+
+                if (result.imported > 0) {
+                    showAlert('success', result.message || `Successfully imported ${result.imported} applications.`);
+                    // Reset form and refresh data
+                    document.getElementById('importForm').reset();
+                    bootstrap.Modal.getInstance(document.getElementById('importModal')).hide();
+                    await loadData();
+                } else {
+                    showAlert('warning', result.message || 'No applications were imported.');
+                }
+
+                if (result.errors && result.errors.length > 0) {
+                    result.errors.forEach(error => {
+                        showAlert('warning', error);
+                    });
+                }
+            } catch (error) {
+                showAlert('error', `Import failed: ${error.message}`);
+            }
+        });
     }
 });
 
@@ -1150,6 +1110,38 @@ document.getElementById('importButton').addEventListener('click', async () => {
 document.getElementById('backButton').addEventListener('click', () => {
     document.getElementById('step2').classList.add('hidden');
     document.getElementById('step1').classList.remove('hidden');
+});
+
+document.getElementById('importForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData();
+    const file = document.getElementById('csvFile').files[0];
+    if (!file) {
+        showAlert('error', 'Please select a file');
+        return;
+    }
+    formData.append('file', file);
+
+    try {
+        const response = await fetch('/import_apps', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        if (result.error) {
+            throw new Error(result.error);
+        }
+
+        showAlert('success', `Successfully imported ${result.imported} applications. ${result.skipped > 0 ? `Skipped ${result.skipped} entries.` : ''}`);
+        
+        // Reset form and refresh data
+        document.getElementById('importForm').reset();
+        $('#importModal').modal('hide');
+        loadData();
+    } catch (error) {
+        showAlert('error', `Import failed: ${error.message}`);
+    }
 });
 </script>
 {% endblock %}
