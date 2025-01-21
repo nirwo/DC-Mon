@@ -36,9 +36,61 @@ def delete_team(team_id):
 def get_applications():
     try:
         applications = Application.query.all()
-        return jsonify([app.to_dict() for app in applications])
+        return jsonify([{
+            'id': app.id,
+            'name': app.name,
+            'team_id': app.team_id,
+            'instances': [{
+                'id': inst.id,
+                'host': inst.host,
+                'port': inst.port,
+                'webui_url': inst.webui_url,
+                'db_host': inst.db_host,
+                'status': inst.status
+            } for inst in app.instances]
+        } for app in applications])
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"Error getting applications: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/applications', methods=['POST'])
+def create_application():
+    try:
+        data = request.json
+        app = Application(
+            name=data['name'],
+            team_id=data['team_id']
+        )
+        db.session.add(app)
+        db.session.flush()
+
+        instance = ApplicationInstance(
+            application_id=app.id,
+            host=data['host'],
+            port=data.get('port'),
+            webui_url=data.get('webui_url'),
+            db_host=data.get('db_host'),
+            status='running'
+        )
+        db.session.add(instance)
+        db.session.commit()
+        
+        return jsonify({
+            'id': app.id,
+            'name': app.name,
+            'team_id': app.team_id,
+            'instances': [{
+                'id': instance.id,
+                'host': instance.host,
+                'port': instance.port,
+                'webui_url': instance.webui_url,
+                'db_host': instance.db_host,
+                'status': instance.status
+            }]
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/api/applications/<int:app_id>', methods=['DELETE'])
 def delete_application(app_id):

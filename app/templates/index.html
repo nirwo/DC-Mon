@@ -245,6 +245,43 @@
 </div>
 
 <style>
+.hidden { display: none; }
+.alert { margin-top: 1rem; }
+.btn-group { margin-right: 0.5rem; }
+.status-badge {
+    width: 80px;
+    text-align: center;
+}
+.table td { vertical-align: middle; }
+.card-body {
+    max-height: 500px;
+    overflow-y: auto;
+}
+.app-card {
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+.app-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+.app-card .card-body {
+    max-height: none;
+    overflow: visible;
+}
+.app-details {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+}
+.app-details.expanded {
+    max-height: 500px;
+}
+.section-card {
+    margin-bottom: 1rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
 .system-row {
     padding: 1rem;
     margin-bottom: 0.5rem;
@@ -460,7 +497,6 @@
     gap: 5px;
 }
 
-.hidden { display: none; }
 .mapping-row { margin-bottom: 10px; }
 </style>
 
@@ -921,46 +957,75 @@ async function loadTeams() {
 async function loadApplications() {
     try {
         const [appsResponse, teamsResponse] = await Promise.all([
-            fetch('/api/applications'),
-            fetch('/api/teams')
+            fetch('/api/applications').then(r => {
+                if (!r.ok) throw new Error(`Failed to fetch applications: ${r.status}`);
+                return r.json();
+            }),
+            fetch('/api/teams').then(r => {
+                if (!r.ok) throw new Error(`Failed to fetch teams: ${r.status}`);
+                return r.json();
+            })
         ]);
         
-        const applications = await appsResponse.json();
-        const teams = await teamsResponse.json();
+        const applications = appsResponse;
+        const teams = teamsResponse;
         const teamsMap = Object.fromEntries(teams.map(team => [team.id, team.name]));
         
         document.getElementById('applicationsList').innerHTML = applications.map(app => `
             <div class="col">
-                <div class="card h-100">
+                <div class="card app-card h-100 section-card" onclick="toggleAppDetails(${app.id})">
                     <div class="card-body">
-                        <h5 class="card-title">${app.name}</h5>
-                        <div class="mb-2">
-                            <span class="badge bg-info">${teamsMap[app.team_id]}</span>
-                            ${getStatusBadgeHtml(app.instances[0]?.status || 'unknown')}
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h5 class="card-title">${app.name}</h5>
+                                <div class="mb-2">
+                                    <span class="badge bg-info">${teamsMap[app.team_id]}</span>
+                                    ${getStatusBadgeHtml(app.instances[0]?.status || 'unknown')}
+                                </div>
+                            </div>
+                            <div class="btn-group">
+                                ${app.instances[0]?.webui_url ? `
+                                    <a href="${app.instances[0].webui_url}" target="_blank" class="btn btn-outline-primary btn-sm" onclick="event.stopPropagation()">
+                                        <i class="bi bi-box-arrow-up-right"></i>
+                                    </a>
+                                ` : ''}
+                                <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteApplication(${app.id})">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
                         </div>
-                        <div class="small text-muted mb-2">
-                            <div><strong>Host:</strong> ${app.instances[0]?.host || '-'}</div>
-                            <div><strong>Port:</strong> ${app.instances[0]?.port || '-'}</div>
-                        </div>
-                    </div>
-                    <div class="card-footer bg-transparent border-top-0">
-                        <div class="btn-group float-end">
-                            ${app.instances[0]?.webui_url ? `
-                                <a href="${app.instances[0].webui_url}" target="_blank" class="btn btn-outline-primary btn-sm">
-                                    <i class="bi bi-box-arrow-up-right"></i> Web UI
-                                </a>
-                            ` : ''}
-                            <button class="btn btn-danger btn-sm" onclick="deleteApplication(${app.id})">
-                                <i class="bi bi-trash"></i> Delete
-                            </button>
+                        
+                        <div class="app-details" id="details-${app.id}">
+                            <hr>
+                            <div class="small text-muted">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <p><strong>Host:</strong> ${app.instances[0]?.host || '-'}</p>
+                                        <p><strong>Port:</strong> ${app.instances[0]?.port || '-'}</p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <p><strong>DB Host:</strong> ${app.instances[0]?.db_host || '-'}</p>
+                                        <p><strong>Status:</strong> ${app.instances[0]?.status || 'unknown'}</p>
+                                    </div>
+                                </div>
+                                ${app.instances[0]?.webui_url ? `
+                                    <p><strong>Web UI:</strong> <a href="${app.instances[0].webui_url}" target="_blank">${app.instances[0].webui_url}</a></p>
+                                ` : ''}
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         `).join('');
     } catch (error) {
+        console.error('Load error:', error);
         showAlert('error', `Failed to load applications: ${error.message}`);
     }
+}
+
+function toggleAppDetails(cardId) {
+    const details = document.getElementById(`details-${cardId}`);
+    details.classList.toggle('expanded');
 }
 
 // Add import form listener
