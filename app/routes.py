@@ -6,6 +6,7 @@ import csv
 import os
 import io
 import traceback
+from io import StringIO
 
 main = Blueprint('main', __name__)
 
@@ -233,40 +234,42 @@ def import_apps():
         return jsonify({'error': 'Invalid file format. Please upload a CSV file'}), 400
 
     try:
-        # Read CSV file into memory
-        stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+        content = file.stream.read().decode("UTF8")
+        if not content.strip():
+            return jsonify({'error': 'CSV file is empty'}), 400
+            
+        stream = StringIO(content)
         csv_input = csv.DictReader(stream)
+        
+        if not csv_input.fieldnames:
+            return jsonify({'error': 'CSV file has no headers'}), 400
+        
+        required_fields = ['name', 'team_name', 'host']
+        missing_headers = [field for field in required_fields if field not in csv_input.fieldnames]
+        if missing_headers:
+            return jsonify({
+                'error': f'Missing required columns: {", ".join(missing_headers)}',
+                'required': required_fields
+            }), 400
         
         imported = 0
         skipped = 0
         errors = []
         
-        required_fields = ['name', 'team_name', 'host']
-        headers = csv_input.fieldnames
-        
-        # Validate headers
-        if not headers:
-            return jsonify({'error': 'CSV file is empty or has no headers'}), 400
-            
-        missing_headers = [field for field in required_fields if field not in headers]
-        if missing_headers:
-            return jsonify({
-                'error': f'Missing required columns: {", ".join(missing_headers)}. Required columns are: {", ".join(required_fields)}'
-            }), 400
-        
-        for row_num, row in enumerate(csv_input, start=2):  # start=2 to account for header row
+        for row_num, row in enumerate(csv_input, start=2):
             try:
                 # Validate required fields
                 missing_fields = [field for field in required_fields if not row.get(field, '').strip()]
                 if missing_fields:
-                    errors.append(f"Row {row_num}: Missing required fields: {', '.join(missing_fields)}")
+                    errors.append(f"Row {row_num}: Missing values for {', '.join(missing_fields)}")
                     skipped += 1
                     continue
 
                 # Find or create team
-                team = Team.query.filter_by(name=row['team_name'].strip()).first()
+                team_name = row['team_name'].strip()
+                team = Team.query.filter_by(name=team_name).first()
                 if not team:
-                    team = Team(name=row['team_name'].strip())
+                    team = Team(name=team_name)
                     db.session.add(team)
                     db.session.flush()
 
@@ -278,11 +281,12 @@ def import_apps():
                 db.session.add(app)
                 db.session.flush()
 
-                # Create instance
+                # Create instance with validation
+                port = row.get('port', '').strip()
                 instance = ApplicationInstance(
                     application_id=app.id,
                     host=row['host'].strip(),
-                    port=int(row['port'].strip()) if row.get('port', '').strip().isdigit() else None,
+                    port=int(port) if port.isdigit() else None,
                     webui_url=row.get('webui_url', '').strip() or None,
                     db_host=row.get('db_host', '').strip() or None,
                     status='running'
@@ -290,30 +294,32 @@ def import_apps():
                 db.session.add(instance)
                 imported += 1
 
+            except ValueError as ve:
+                errors.append(f"Row {row_num}: Invalid value - {str(ve)}")
+                skipped += 1
             except Exception as e:
                 errors.append(f"Row {row_num}: {str(e)}")
                 skipped += 1
                 continue
 
-        db.session.commit()
+        if imported > 0:
+            db.session.commit()
+        else:
+            db.session.rollback()
+            return jsonify({'error': 'No valid records to import', 'errors': errors}), 400
         
-        response = {
+        return jsonify({
             'imported': imported,
             'skipped': skipped,
-            'message': f'Successfully imported {imported} applications'
-        }
-        
-        if errors:
-            response['errors'] = errors
-            
-        return jsonify(response)
+            'message': f'Successfully imported {imported} applications',
+            'errors': errors if errors else None
+        })
 
+    except UnicodeDecodeError:
+        return jsonify({'error': 'Invalid file encoding. Please use UTF-8'}), 400
     except Exception as e:
         db.session.rollback()
-        return jsonify({
-            'error': f'Import failed: {str(e)}',
-            'details': traceback.format_exc()
-        }), 500
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/shutdown_app/<int:app_id>', methods=['POST'])
 def shutdown_app(app_id):
