@@ -7,6 +7,7 @@ import os
 import io
 import traceback
 from io import StringIO
+import socket
 
 main = Blueprint('main', __name__)
 
@@ -38,22 +39,31 @@ def delete_team(team_id):
 def get_applications():
     try:
         applications = Application.query.all()
-        return jsonify([{
-            'id': app.id,
-            'name': app.name,
-            'team_id': app.team_id,
-            'team_name': app.team.name if app.team else None,
-            'instances': [{
-                'id': inst.id,
-                'host': inst.host,
-                'port': inst.port,
-                'webui_url': inst.webui_url,
-                'db_host': inst.db_host,
-                'status': inst.status
-            } for inst in app.instances]
-        } for app in applications])
+        result = []
+        for app in applications:
+            app_dict = app.to_dict()
+            instances = []
+            for instance in app.instances:
+                instance_dict = instance.to_dict()
+                try:
+                    # Check if host is reachable
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(2)  # 2 second timeout
+                    port = instance.port or 80  # Default to 80 if no port specified
+                    status = sock.connect_ex((instance.host, port))
+                    sock.close()
+                    
+                    if status == 0:
+                        instance_dict['status'] = 'running'
+                    else:
+                        instance_dict['status'] = 'stopped'
+                except:
+                    instance_dict['status'] = 'error'
+                instances.append(instance_dict)
+            app_dict['instances'] = instances
+            result.append(app_dict)
+        return jsonify(result)
     except Exception as e:
-        current_app.logger.error(f"Error getting applications: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @main.route('/api/applications', methods=['POST'])
@@ -252,6 +262,16 @@ def import_apps():
                 'required': required_fields
             }), 400
         
+        # Clean existing data
+        try:
+            ApplicationInstance.query.delete()
+            Application.query.delete()
+            Team.query.delete()
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'Failed to clean existing data: {str(e)}'}), 500
+        
         imported = 0
         skipped = 0
         errors = []
@@ -289,7 +309,7 @@ def import_apps():
                     port=int(port) if port.isdigit() else None,
                     webui_url=row.get('webui_url', '').strip() or None,
                     db_host=row.get('db_host', '').strip() or None,
-                    status='running'
+                    status='unknown'  # Default to unknown, will be updated by monitoring
                 )
                 db.session.add(instance)
                 imported += 1
