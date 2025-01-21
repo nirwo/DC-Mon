@@ -3,7 +3,92 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<div class="container mt-4 main-content">
+<style>
+.main-container {
+    padding: 20px;
+    margin-bottom: 250px; /* Space for terminal */
+}
+
+.terminal {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 200px;
+    background: #1e1e1e;
+    color: #fff;
+    font-family: monospace;
+    font-size: 14px;
+    z-index: 1000;
+    border-top: 2px solid #333;
+    display: flex;
+    flex-direction: column;
+}
+
+.terminal-header {
+    padding: 5px 10px;
+    background: #333;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.terminal-title {
+    color: #fff;
+    font-size: 12px;
+}
+
+.terminal-controls button {
+    background: #444;
+    border: none;
+    color: #fff;
+    padding: 2px 8px;
+    margin-left: 5px;
+    cursor: pointer;
+}
+
+.terminal-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.terminal-message {
+    margin: 2px 0;
+    padding: 2px 5px;
+    border-radius: 2px;
+}
+
+.terminal-message.success { color: #4CAF50; }
+.terminal-message.error { color: #f44336; }
+.terminal-message.warning { color: #ff9800; }
+.terminal-message.info { color: #2196F3; }
+
+.terminal-message .timestamp {
+    color: #888;
+    margin-right: 10px;
+}
+
+.app-card {
+    transition: all 0.3s ease;
+}
+
+.app-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.app-details {
+    display: none;
+}
+
+.app-card.expanded .app-details {
+    display: block;
+}
+</style>
+
+<div class="main-container">
+    <!-- Header -->
     <div class="row mb-4">
         <div class="col">
             <div class="d-flex justify-content-between align-items-center">
@@ -24,29 +109,37 @@
     </div>
 
     <!-- Teams Section (Collapsed by default) -->
-    <div class="collapse" id="teamsSection">
-        <div class="row mb-4">
-            <div class="col">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h3>Teams</h3>
-                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTeamModal">
-                        <i class="bi bi-plus"></i> Add Team
-                    </button>
-                </div>
+    <div class="collapse mb-4" id="teamsSection">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Teams</h5>
+                <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addTeamModal">
+                    <i class="bi bi-plus"></i> Add Team
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row" id="teamsList"></div>
             </div>
         </div>
-        <div class="row row-cols-1 row-cols-md-3 g-4 mb-4" id="teamsList">
-            <!-- Teams will be loaded here -->
-        </div>
     </div>
 
-    <!-- Applications Section -->
-    <div class="row row-cols-1 row-cols-md-3 g-4" id="applicationsList">
-        <!-- Applications will be loaded here -->
-    </div>
+    <!-- Applications List -->
+    <div class="row" id="applicationsList"></div>
 </div>
 
-<!-- Add Application Modal -->
+<!-- Terminal -->
+<div class="terminal" id="terminal">
+    <div class="terminal-header">
+        <span class="terminal-title">System Logs</span>
+        <div class="terminal-controls">
+            <button onclick="clearTerminal()">Clear</button>
+            <button onclick="toggleTerminal()">Toggle</button>
+        </div>
+    </div>
+    <div class="terminal-content" id="terminalContent"></div>
+</div>
+
+<!-- Modals -->
 <div class="modal fade" id="addApplicationModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -57,29 +150,27 @@
             <div class="modal-body">
                 <form id="addApplicationForm">
                     <div class="mb-3">
-                        <label for="appName" class="form-label">Application Name</label>
+                        <label class="form-label">Name</label>
                         <input type="text" class="form-control" id="appName" required>
                     </div>
                     <div class="mb-3">
-                        <label for="teamSelect" class="form-label">Team</label>
-                        <select class="form-select" id="teamSelect" required>
-                            <!-- Teams will be loaded here -->
-                        </select>
+                        <label class="form-label">Team</label>
+                        <select class="form-select" id="teamSelect" required></select>
                     </div>
                     <div class="mb-3">
-                        <label for="appHost" class="form-label">Host</label>
+                        <label class="form-label">Host</label>
                         <input type="text" class="form-control" id="appHost" required>
                     </div>
                     <div class="mb-3">
-                        <label for="appPort" class="form-label">Port</label>
+                        <label class="form-label">Port</label>
                         <input type="number" class="form-control" id="appPort">
                     </div>
                     <div class="mb-3">
-                        <label for="appWebUI" class="form-label">Web UI URL</label>
+                        <label class="form-label">Web UI URL</label>
                         <input type="url" class="form-control" id="appWebUI">
                     </div>
                     <div class="mb-3">
-                        <label for="appDBHost" class="form-label">DB Host</label>
+                        <label class="form-label">DB Host</label>
                         <input type="text" class="form-control" id="appDBHost">
                     </div>
                     <button type="submit" class="btn btn-primary">Add Application</button>
@@ -89,7 +180,6 @@
     </div>
 </div>
 
-<!-- Add Team Modal -->
 <div class="modal fade" id="addTeamModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -103,17 +193,13 @@
                         <label class="form-label">Team Name</label>
                         <input type="text" class="form-control" id="teamName" required>
                     </div>
+                    <button type="submit" class="btn btn-primary">Add Team</button>
                 </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="createTeam()">Add Team</button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Import Modal -->
 <div class="modal fade" id="importModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -122,21 +208,10 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div class="alert alert-info">
-                    CSV file should have these columns:
-                    <ul>
-                        <li>name (required)</li>
-                        <li>team (required)</li>
-                        <li>host (required)</li>
-                        <li>port (optional)</li>
-                        <li>webui_url (optional)</li>
-                        <li>db_host (optional)</li>
-                    </ul>
-                </div>
-                <form id="importForm" enctype="multipart/form-data">
+                <form id="importForm">
                     <div class="mb-3">
-                        <label for="csvFile" class="form-label">Select CSV File</label>
-                        <input type="file" class="form-control" id="csvFile" name="file" accept=".csv" required>
+                        <label class="form-label">CSV File</label>
+                        <input type="file" class="form-control" id="importFile" accept=".csv" required>
                     </div>
                     <button type="submit" class="btn btn-primary">Import</button>
                 </form>
@@ -145,1222 +220,189 @@
     </div>
 </div>
 
-<!-- CSV Mapping UI -->
-<div class="modal fade" id="csvMappingModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">CSV Mapping</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div id="csvMappingContainer">
-                    <h2>Import Applications</h2>
-                    
-                    <!-- Step 1: File Upload -->
-                    <div id="step1" class="mb-4">
-                        <form id="uploadForm" enctype="multipart/form-data">
-                            <div class="mb-3">
-                                <label for="csvFile" class="form-label">Select CSV File</label>
-                                <input type="file" class="form-control" id="csvFile" name="file" accept=".csv" required>
-                            </div>
-                            <button type="submit" class="btn btn-primary">Upload and Preview</button>
-                        </form>
-                    </div>
-
-                    <!-- Step 2: Column Mapping -->
-                    <div id="step2" class="hidden">
-                        <h4>Map CSV Columns</h4>
-                        <div class="alert alert-info">
-                            Please map your CSV columns to the required fields. Required fields are marked with *.
-                        </div>
-                        <div id="columnMapping" class="mb-3">
-                            <!-- Will be populated dynamically -->
-                        </div>
-                        <button id="importButton" class="btn btn-success">Import Data</button>
-                        <button id="backButton" class="btn btn-secondary">Back</button>
-                    </div>
-
-                    <!-- Results -->
-                    <div id="results" class="mt-4">
-                        <!-- Import results will be shown here -->
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Edit Team Modal -->
-<div class="modal fade" id="editTeamModal" tabindex="-1" aria-labelledby="editTeamModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="editTeamModalLabel">Edit Team</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="editTeamId">
-                <div class="mb-3">
-                    <label for="editTeamName" class="form-label">Team Name</label>
-                    <input type="text" class="form-control" id="editTeamName" required>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="updateTeam()">Save changes</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Terminal Alerts -->
-<div class="terminal-alerts" id="terminalAlerts">
-    <div class="terminal-header">
-        <span class="terminal-title">System Logs</span>
-        <div class="terminal-controls">
-            <button onclick="clearAlerts()">Clear</button>
-            <button onclick="toggleTerminal()">Toggle</button>
-        </div>
-    </div>
-    <div id="alertsContainer"></div>
-</div>
-
-<style>
-.hidden { display: none; }
-.alert { margin-top: 1rem; }
-.btn-group { margin-right: 0.5rem; }
-.status-badge {
-    width: 80px;
-    text-align: center;
-}
-.table td { vertical-align: middle; }
-.card-body {
-    max-height: 500px;
-    overflow-y: auto;
-}
-.app-card {
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-.app-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-.app-card .card-body {
-    max-height: none;
-    overflow: visible;
-}
-.app-details {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease-out;
-}
-.app-details.expanded {
-    max-height: 500px;
-}
-.section-card {
-    margin-bottom: 1rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-.system-row {
-    padding: 1rem;
-    margin-bottom: 0.5rem;
-    border-radius: 4px;
-    transition: all 0.3s ease;
-}
-
-.system-row.running {
-    background-color: #d4edda;
-    border-left: 5px solid #28a745;
-}
-
-.system-row.stopped {
-    background-color: #f8d7da;
-    border-left: 5px solid #dc3545;
-}
-
-.system-row.unknown {
-    background-color: #fff3cd;
-    border-left: 5px solid #ffc107;
-}
-
-.status-dot {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    margin-left: 8px;
-    position: relative;
-}
-
-.status-dot:after {
-    content: '';
-    position: absolute;
-    top: -2px;
-    left: -2px;
-    right: -2px;
-    bottom: -2px;
-    border-radius: 50%;
-    animation: pulse 2s infinite;
-}
-
-.status-dot.running {
-    background-color: #28a745;
-}
-
-.status-dot.running:after {
-    border: 2px solid #28a745;
-}
-
-.status-dot.stopped {
-    background-color: #dc3545;
-}
-
-.status-dot.stopped:after {
-    border: 2px solid #dc3545;
-}
-
-.status-dot.unknown {
-    background-color: #ffc107;
-}
-
-.status-dot.unknown:after {
-    border: 2px solid #ffc107;
-}
-
-@keyframes pulse {
-    0% {
-        transform: scale(1);
-        opacity: 1;
-    }
-    50% {
-        transform: scale(1.5);
-        opacity: 0.5;
-    }
-    100% {
-        transform: scale(1);
-        opacity: 1;
-    }
-}
-
-.systems-container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 1rem;
-}
-
-.systems-header {
-    font-size: 1.5rem;
-    font-weight: bold;
-    margin-bottom: 1rem;
-    padding: 0.5rem;
-    border-radius: 4px;
-}
-
-.running-systems .systems-header {
-    background-color: #d4edda;
-    color: #155724;
-}
-
-.stopped-systems .systems-header {
-    background-color: #f8d7da;
-    color: #721c24;
-}
-
-.unknown-systems .systems-header {
-    background-color: #fff3cd;
-    color: #856404;
-}
-
-.card {
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    margin-bottom: 1rem;
-}
-
-.card-header {
-    font-weight: bold;
-}
-
-.status-dot {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    margin-left: 5px;
-}
-
-.status-dot.running {
-    background-color: #28a745;
-    box-shadow: 0 0 5px #28a745;
-}
-
-.status-dot.stopped {
-    background-color: #dc3545;
-    box-shadow: 0 0 5px #dc3545;
-}
-
-.status-dot.unknown {
-    background-color: #ffc107;
-    box-shadow: 0 0 5px #ffc107;
-}
-
-.team-card {
-    background-color: #f8f9fa;
-    border-left: 5px solid #007bff;
-}
-
-.app-card {
-    background-color: #fff;
-    border-left: 5px solid #28a745;
-}
-
-.system-card {
-    background-color: #fff;
-    border-left: 5px solid #17a2b8;
-}
-
-.team-stats {
-    background-color: #e9ecef;
-    padding: 0.5rem;
-    border-radius: 4px;
-    margin-top: 0.5rem;
-}
-
-.nav-tabs .nav-link.active {
-    font-weight: bold;
-    border-bottom: 3px solid #007bff;
-}
-
-.badge {
-    font-size: 0.8rem;
-    padding: 0.4em 0.6em;
-}
-
-.badge.bg-running { background-color: #28a745 !important; }
-.badge.bg-stopped { background-color: #dc3545 !important; }
-.badge.bg-unknown { background-color: #ffc107 !important; }
-
-.status-dot {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    margin-left: 5px;
-}
-.status-running { background-color: #4CAF50; }
-.status-stopped { background-color: #f44336; }
-.status-unknown { background-color: #9e9e9e; }
-
-.system-url {
-    text-decoration: none;
-    margin-left: 5px;
-}
-
-.port-badge {
-    background-color: #e0e0e0;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 0.8em;
-    margin-left: 5px;
-}
-
-.systems-list, .dependencies-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
-
-.systems-list li, .dependencies-list li {
-    margin: 5px 0;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.mapping-row { margin-bottom: 10px; }
-
-.terminal-alerts {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    max-height: 200px;
-    background: #1e1e1e;
-    color: #fff;
-    font-family: monospace;
-    overflow-y: auto;
-    z-index: 1050;
-    border-top: 2px solid #333;
-    padding: 10px;
-}
-
-.terminal-alerts .alert {
-    background: transparent;
-    color: #fff;
-    border: none;
-    padding: 5px 10px;
-    margin-bottom: 5px;
-    font-size: 14px;
-}
-
-.terminal-alerts .alert-success {
-    color: #00ff00;
-}
-
-.terminal-alerts .alert-error {
-    color: #ff4444;
-}
-
-.terminal-alerts .alert-warning {
-    color: #ffbb33;
-}
-
-.terminal-alerts .alert-info {
-    color: #33b5e5;
-}
-
-.terminal-alerts .timestamp {
-    color: #888;
-    margin-right: 10px;
-}
-
-.main-content {
-    margin-bottom: 220px;
-}
-
-.terminal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid #333;
-    padding-bottom: 5px;
-    margin-bottom: 10px;
-}
-
-.terminal-title {
-    color: #888;
-    font-size: 12px;
-}
-
-.terminal-controls {
-    display: flex;
-    gap: 10px;
-}
-
-.terminal-controls button {
-    background: transparent;
-    border: 1px solid #444;
-    color: #888;
-    padding: 2px 8px;
-    font-size: 12px;
-    cursor: pointer;
-}
-
-.terminal-controls button:hover {
-    background: #333;
-}
-</style>
-
 <script>
-// Utility Functions
-function showAlert(type, message) {
-    const alertsContainer = document.getElementById('alertsContainer');
+// Terminal functions
+function log(type, message) {
+    const terminal = document.getElementById('terminalContent');
     const timestamp = new Date().toLocaleTimeString();
     
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type}`;
-    alertDiv.innerHTML = `
-        <span class="timestamp">[${timestamp}]</span>
-        <span class="message">${message}</span>
-    `;
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `terminal-message ${type}`;
+    msgDiv.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
     
-    alertsContainer.appendChild(alertDiv);
-    alertsContainer.scrollTop = alertsContainer.scrollHeight;
+    terminal.appendChild(msgDiv);
+    terminal.scrollTop = terminal.scrollHeight;
     
-    // Keep only last 50 messages
-    const alerts = alertsContainer.getElementsByClassName('alert');
-    while (alerts.length > 50) {
-        alertsContainer.removeChild(alerts[0]);
+    // Keep only last 100 messages
+    while (terminal.children.length > 100) {
+        terminal.removeChild(terminal.firstChild);
     }
 }
 
-function clearAlerts() {
-    document.getElementById('alertsContainer').innerHTML = '';
-    showAlert('info', 'Terminal cleared');
+function clearTerminal() {
+    document.getElementById('terminalContent').innerHTML = '';
+    log('info', 'Terminal cleared');
 }
 
 function toggleTerminal() {
-    const terminal = document.getElementById('terminalAlerts');
+    const terminal = document.getElementById('terminal');
+    const mainContainer = document.querySelector('.main-container');
+    
     if (terminal.style.display === 'none') {
-        terminal.style.display = 'block';
-        document.querySelector('.main-content').style.marginBottom = '220px';
+        terminal.style.display = 'flex';
+        mainContainer.style.marginBottom = '250px';
     } else {
         terminal.style.display = 'none';
-        document.querySelector('.main-content').style.marginBottom = '20px';
+        mainContainer.style.marginBottom = '20px';
     }
 }
 
-// Initialize terminal
+// Application functions
+function getStatusBadgeHtml(status) {
+    const statusColors = {
+        'running': 'success',
+        'stopped': 'danger',
+        'unknown': 'secondary',
+        'error': 'warning'
+    };
+    const color = statusColors[status] || 'secondary';
+    return `<span class="badge bg-${color}">${status}</span>`;
+}
+
+async function loadApplications() {
+    try {
+        const response = await fetch('/api/applications');
+        if (!response.ok) throw new Error('Failed to fetch applications');
+        const applications = await response.json();
+        
+        const container = document.getElementById('applicationsList');
+        
+        if (!applications || applications.length === 0) {
+            container.innerHTML = `
+                <div class="col-12">
+                    <div class="alert alert-info">
+                        No applications found. Add one using the buttons above.
+                    </div>
+                </div>`;
+            return;
+        }
+
+        container.innerHTML = applications.map(app => `
+            <div class="col-md-4 mb-4">
+                <div class="card app-card h-100" onclick="toggleAppDetails(${app.id})">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h5 class="card-title">${app.name}</h5>
+                                <div class="mb-2">
+                                    <span class="badge bg-info">${app.team_name || 'No Team'}</span>
+                                    ${getStatusBadgeHtml(app.instances[0]?.status || 'unknown')}
+                                </div>
+                            </div>
+                            <div class="btn-group">
+                                ${app.instances[0]?.webui_url ? `
+                                    <a href="${app.instances[0].webui_url}" target="_blank" class="btn btn-outline-primary btn-sm">
+                                        <i class="bi bi-box-arrow-up-right"></i>
+                                    </a>
+                                ` : ''}
+                                <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteApplication(${app.id})">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="app-details mt-3" id="details-${app.id}">
+                            <hr>
+                            <div class="small">
+                                <p><strong>Host:</strong> ${app.instances[0]?.host || '-'}</p>
+                                <p><strong>Port:</strong> ${app.instances[0]?.port || '-'}</p>
+                                <p><strong>DB Host:</strong> ${app.instances[0]?.db_host || '-'}</p>
+                                ${app.instances[0]?.webui_url ? `
+                                    <p><strong>Web UI:</strong> <a href="${app.instances[0].webui_url}" target="_blank">${app.instances[0].webui_url}</a></p>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        
+        log('info', 'Applications loaded successfully');
+    } catch (error) {
+        log('error', `Failed to load applications: ${error.message}`);
+    }
+}
+
+function toggleAppDetails(appId) {
+    const card = document.querySelector(`#details-${appId}`).closest('.app-card');
+    card.classList.toggle('expanded');
+}
+
+// Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
-    showAlert('info', 'System initialized');
-});
-
-// Utility Functions
-function getStatusBadgeHtml(status) {
-    const statusColors = {
-        'running': 'success',
-        'stopped': 'danger',
-        'unknown': 'secondary',
-        'error': 'warning'
-    };
-    const color = statusColors[status] || 'secondary';
-    return `<span class="badge bg-${color}">${status}</span>`;
-}
-
-// Alert handling
-function deleteTeam(teamId) {
-    if (!confirm('Are you sure you want to delete this team?')) {
-        return;
-    }
+    loadApplications();
+    log('info', 'System initialized');
     
-    fetch(`/api/teams/${teamId}`, {
-        method: 'DELETE',
-        headers: {
-            'Content-Type': 'application/json'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showAlert('success', 'Team deleted successfully');
-            loadTeams();
-        } else {
-            showAlert('danger', 'Failed to delete team: ' + data.error);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showAlert('danger', 'Failed to delete team');
-    });
-}
-
-function editTeam(teamId) {
-    const teamName = document.querySelector(`tr[data-team-id="${teamId}"] td:first-child`).textContent;
-    document.getElementById('editTeamId').value = teamId;
-    document.getElementById('editTeamName').value = teamName;
-    const modal = new bootstrap.Modal(document.getElementById('editTeamModal'));
-    modal.show();
-}
-
-function updateTeam() {
-    const teamId = document.getElementById('editTeamId').value;
-    const teamName = document.getElementById('editTeamName').value;
-    
-    fetch(`/api/teams/${teamId}`, {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            name: teamName
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showAlert('success', 'Team updated successfully');
-            const modal = bootstrap.Modal.getInstance(document.getElementById('editTeamModal'));
-            modal.hide();
-            loadTeams();
-        } else {
-            showAlert('danger', 'Failed to update team: ' + data.error);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showAlert('danger', 'Failed to update team');
-    });
-}
-
-function deleteApplication(appId) {
-    if (!confirm('Are you sure you want to delete this application and all its systems?')) {
-        return;
-    }
-    
-    fetch(`/api/applications/${appId}`, {
-        method: 'DELETE'
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showAlert('success', 'Application deleted successfully');
-            loadApplications();
-        } else {
-            showAlert('danger', 'Failed to delete application: ' + data.error);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showAlert('danger', 'Failed to delete application');
-    });
-}
-
-function deleteSystem(systemId) {
-    if (!confirm('Are you sure you want to delete this system?')) {
-        return;
-    }
-    
-    fetch(`/api/systems/${systemId}`, {
-        method: 'DELETE'
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showAlert('success', 'System deleted successfully');
-            loadSystems();
-        } else {
-            showAlert('danger', 'Failed to delete system: ' + data.error);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showAlert('danger', 'Failed to delete system');
-    });
-}
-
-function allowDrop(ev) {
-    ev.preventDefault();
-}
-
-function drag(ev) {
-    ev.dataTransfer.setData("text", ev.target.id);
-}
-
-function drop(ev) {
-    ev.preventDefault();
-    var data = ev.dataTransfer.getData("text");
-    var draggedElement = document.getElementById(data);
-    var targetList = ev.target.closest('[id$="List"]');
-    if (targetList) {
-        targetList.appendChild(draggedElement);
-        updateApplicationState(data.split('-')[1], targetList.id.replace('List', ''));
-    }
-}
-
-function updateApplicationState(appId, state) {
-    fetch(`/api/applications/${appId}/state`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({state: state})
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            alert('Error: ' + data.error);
-        }
-    });
-}
-
-function toggleApplication(appId) {
-    const toggle = document.getElementById(`toggle-${appId}`);
-    fetch(`/api/applications/${appId}/toggle`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({enabled: toggle.checked})
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            alert('Error: ' + data.error);
-            toggle.checked = !toggle.checked;
-        }
-    });
-}
-
-function createTeam() {
-    const teamName = document.getElementById('teamName').value;
-    
-    fetch('/api/teams', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            name: teamName
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showAlert('success', 'Team created successfully');
-            const modal = bootstrap.Modal.getInstance(document.getElementById('addTeamModal'));
-            modal.hide();
-            const teamsTab = document.getElementById('teams-tab');
-            if (teamsTab) {
-                teamsTab.click();
-            }
-        } else {
-            showAlert('danger', 'Failed to create team: ' + data.error);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showAlert('danger', 'Failed to create team');
-    });
-}
-
-function createApplication() {
-    const appName = document.getElementById('applicationName').value;
-    const teamId = document.getElementById('applicationTeam').value;
-    const description = document.getElementById('applicationDescription').value;
-    
-    fetch('/api/applications/create', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            name: appName,
-            team_id: teamId,
-            description: description
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showAlert('success', 'Application created successfully');
-            const modal = bootstrap.Modal.getInstance(document.getElementById('addApplicationModal'));
-            modal.hide();
-            const appsTab = document.getElementById('applications-tab');
-            if (appsTab) {
-                appsTab.click();
-            }
-        } else {
-            showAlert('danger', 'Failed to create application: ' + data.error);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showAlert('danger', 'Failed to create application');
-    });
-}
-
-function createSystem() {
-    const systemName = document.getElementById('systemName').value;
-    const appId = document.getElementById('systemApplication').value;
-    const host = document.getElementById('systemHost').value;
-    const port = document.getElementById('systemPort').value;
-    
-    fetch('/api/systems', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            name: systemName,
-            application_id: appId,
-            host: host,
-            port: port
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showAlert('success', 'System created successfully');
-            const modal = bootstrap.Modal.getInstance(document.getElementById('addSystemModal'));
-            modal.hide();
-            const systemsTab = document.getElementById('systems-tab');
-            if (systemsTab) {
-                systemsTab.click();
-            }
-        } else {
-            showAlert('danger', 'Failed to create system: ' + data.error);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showAlert('danger', 'Failed to create system');
-    });
-}
-
-function updateSystemStatus(systemId) {
-    fetch(`/api/systems/${systemId}/status`)
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            const statusCell = document.querySelector(`tr[data-system-id="${systemId}"] .status-cell`);
-            const statusSwitch = document.querySelector(`tr[data-system-id="${systemId}"] .status-switch`);
-            if (statusCell) {
-                statusCell.textContent = data.status;
-                if (statusSwitch) {
-                    statusSwitch.checked = data.status === 'running';
-                }
-            }
-        }
-    })
-    .catch(error => {
-        console.error('Error updating systems:', error);
-        showAlert('danger', 'Failed to update systems status');
-    });
-}
-
-function toggleSystemStatus(systemId, element) {
-    const newStatus = element.checked ? 'running' : 'stopped';
-    
-    fetch(`/api/systems/${systemId}/status`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            status: newStatus
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            showAlert('success', `System ${newStatus}`);
-            updateSystemsList(); // Refresh the list
-        } else {
-            element.checked = !element.checked;
-            showAlert('danger', 'Failed to update system status');
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        element.checked = !element.checked;
-        showAlert('danger', 'Failed to update system status');
-    });
-}
-
-function updateSystemsList() {
-    fetch('/api/systems')
-        .then(response => {
-            if (!response.ok) throw new Error(response.statusText);
-            return response.json();
-        })
-        .then(systems => {
-            const systemsList = document.getElementById('systemsList');
-            if (!systemsList) return;
+    // Setup form handlers
+    document.getElementById('addApplicationForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+            const formData = {
+                name: document.getElementById('appName').value,
+                team_id: document.getElementById('teamSelect').value,
+                host: document.getElementById('appHost').value,
+                port: document.getElementById('appPort').value || null,
+                webui_url: document.getElementById('appWebUI').value || null,
+                db_host: document.getElementById('appDBHost').value || null
+            };
             
-            systemsList.innerHTML = '';
-            systems.forEach(system => {
-                const systemHtml = `
-                    <tr data-system-id="${system.id}">
-                        <td>${system.name}</td>
-                        <td>${system.application.name}</td>
-                        <td>${system.host}</td>
-                        <td>${system.port}</td>
-                        <td>
-                            <span class="badge bg-${system.status === 'running' ? 'success' : system.status === 'stopped' ? 'danger' : 'warning'}">
-                                ${system.status}
-                            </span>
-                        </td>
-                        <td>
-                            <button class="btn btn-sm btn-danger" onclick="deleteSystem('${system.id}')">Delete</button>
-                        </td>
-                    </tr>
-                `;
-                systemsList.insertAdjacentHTML('beforeend', systemHtml);
+            const response = await fetch('/api/applications', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
             });
-        })
-        .catch(error => {
-            console.error('Error updating systems:', error);
-            showAlert('danger', 'Failed to update systems list');
-        });
-}
-
-// Update teams list every 10 seconds
-setInterval(updateTeamsList, 10000);
-
-// Initial update
-document.addEventListener('DOMContentLoaded', updateTeamsList);
-
-async function loadTeams() {
-    try {
-        const response = await fetch('/api/teams');
-        if (!response.ok) throw new Error(`Failed to fetch teams: ${response.status}`);
-        const teams = await response.json();
+            
+            if (!response.ok) throw new Error('Failed to add application');
+            
+            log('success', 'Application added successfully');
+            bootstrap.Modal.getInstance(document.getElementById('addApplicationModal')).hide();
+            loadApplications();
+        } catch (error) {
+            log('error', `Failed to add application: ${error.message}`);
+        }
+    });
+    
+    document.getElementById('importForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData();
+        formData.append('file', document.getElementById('importFile').files[0]);
         
-        document.getElementById('teamsList').innerHTML = teams.map(team => `
-            <div class="col">
-                <div class="card team-card h-100 section-card">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <h5 class="card-title">${team.name}</h5>
-                                <span class="badge bg-info">${team.application_count} Applications</span>
-                            </div>
-                            <div class="btn-group">
-                                <button class="btn btn-danger btn-sm" onclick="deleteTeam(${team.id})">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `).join('');
-    } catch (error) {
-        console.error('Load error:', error);
-        showAlert('error', `Failed to load teams: ${error.message}`);
-    }
-}
-
-async function loadApplications() {
-    try {
-        const response = await fetch('/api/applications');
-        if (!response.ok) throw new Error(`Failed to fetch applications: ${response.status}`);
-        const applications = await response.json();
-        
-        if (!applications || applications.length === 0) {
-            document.getElementById('applicationsList').innerHTML = `
-                <div class="col-12">
-                    <div class="alert alert-info">
-                        No applications found. Import some applications using the Import button above.
-                    </div>
-                </div>`;
-            return;
-        }
-
-        document.getElementById('applicationsList').innerHTML = applications.map(app => `
-            <div class="col">
-                <div class="card app-card h-100 section-card" onclick="toggleAppDetails(${app.id})">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <h5 class="card-title">${app.name}</h5>
-                                <div class="mb-2">
-                                    <span class="badge bg-info">${app.team_name || 'No Team'}</span>
-                                    ${getStatusBadgeHtml(app.instances[0]?.status || 'unknown')}
-                                </div>
-                            </div>
-                            <div class="btn-group">
-                                ${app.instances[0]?.webui_url ? `
-                                    <a href="${app.instances[0].webui_url}" target="_blank" class="btn btn-outline-primary btn-sm" onclick="event.stopPropagation()">
-                                        <i class="bi bi-box-arrow-up-right"></i>
-                                    </a>
-                                ` : ''}
-                                <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteApplication(${app.id})">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div class="app-details" id="details-${app.id}">
-                            <hr>
-                            <div class="small text-muted">
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <p><strong>Host:</strong> ${app.instances[0]?.host || '-'}</p>
-                                        <p><strong>Port:</strong> ${app.instances[0]?.port || '-'}</p>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <p><strong>DB Host:</strong> ${app.instances[0]?.db_host || '-'}</p>
-                                        <p><strong>Status:</strong> ${app.instances[0]?.status || 'unknown'}</p>
-                                    </div>
-                                </div>
-                                ${app.instances[0]?.webui_url ? `
-                                    <p><strong>Web UI:</strong> <a href="${app.instances[0].webui_url}" target="_blank">${app.instances[0].webui_url}</a></p>
-                                ` : ''}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `).join('');
-    } catch (error) {
-        console.error('Load error:', error);
-        showAlert('error', `Failed to load applications: ${error.message}`);
-    }
-}
-
-// Load data on page load
-document.addEventListener('DOMContentLoaded', async () => {
-    await Promise.all([
-        loadTeams(),
-        loadApplications()
-    ]);
-});
-
-async function handleImport(e) {
-    e.preventDefault();
-    const formData = new FormData();
-    const file = document.getElementById('csvFile').files[0];
-    if (!file) {
-        showAlert('error', 'Please select a file');
-        return;
-    }
-    formData.append('file', file);
-
-    try {
-        const response = await fetch('/import_apps', {
-            method: 'POST',
-            body: formData
-        });
-        
-        const result = await response.json();
-        if (!response.ok) {
-            throw new Error(result.error || 'Import failed');
-        }
-
-        // Show success message if any records were imported
-        if (result.imported > 0) {
-            showAlert('success', `Successfully imported ${result.imported} applications.`);
-            document.getElementById('importForm').reset();
-            const modal = bootstrap.Modal.getInstance(document.getElementById('importModal'));
-            if (modal) modal.hide();
-            await Promise.all([loadTeams(), loadApplications()]);
-        }
-
-        // Show warnings for skipped records
-        if (result.skipped > 0) {
-            showAlert('warning', `Skipped ${result.skipped} records.`, 10000);
-        }
-
-        // Show each error in a separate alert
-        if (result.errors && result.errors.length > 0) {
-            result.errors.forEach((error, index) => {
-                setTimeout(() => {
-                    showAlert('error', error);
-                }, index * 300);
+        try {
+            const response = await fetch('/import_apps', {
+                method: 'POST',
+                body: formData
             });
+            
+            const result = await response.json();
+            
+            if (!response.ok) throw new Error(result.error || 'Import failed');
+            
+            log('success', `Imported ${result.imported} applications successfully`);
+            if (result.skipped > 0) {
+                log('warning', `Skipped ${result.skipped} records`);
+            }
+            if (result.errors) {
+                result.errors.forEach(error => log('error', error));
+            }
+            
+            bootstrap.Modal.getInstance(document.getElementById('importModal')).hide();
+            loadApplications();
+        } catch (error) {
+            log('error', `Import failed: ${error.message}`);
         }
-    } catch (error) {
-        showAlert('error', `Import failed: ${error.message}`);
-    }
-}
-
-// Add import form listener
-document.addEventListener('DOMContentLoaded', function() {
-    const importForm = document.getElementById('importForm');
-    if (importForm) {
-        importForm.addEventListener('submit', handleImport);
-    }
+    });
 });
 
-// Utility Functions
-function getStatusBadgeHtml(status) {
-    const statusColors = {
-        'running': 'success',
-        'stopped': 'danger',
-        'unknown': 'secondary',
-        'error': 'warning'
-    };
-    const color = statusColors[status] || 'secondary';
-    return `<span class="badge bg-${color}">${status}</span>`;
-}
-
-// Event Handlers
-document.getElementById('addApplicationForm')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const formData = {
-        name: document.getElementById('appName').value,
-        team_id: document.getElementById('teamSelect').value,
-        host: document.getElementById('appHost').value,
-        port: document.getElementById('appPort').value || null,
-        webui_url: document.getElementById('appWebUI').value || null,
-        db_host: document.getElementById('appDBHost').value || null
-    };
-
-    try {
-        const response = await fetch('/api/applications', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(formData)
-        });
-
-        if (!response.ok) {
-            const data = await response.json();
-            throw new Error(data.error || 'Failed to add application');
-        }
-
-        showAlert('success', 'Application added successfully');
-        document.getElementById('addApplicationForm').reset();
-        bootstrap.Modal.getInstance(document.getElementById('addApplicationModal')).hide();
-        await Promise.all([loadTeams(), loadApplications()]);
-    } catch (error) {
-        showAlert('error', error.message);
-    }
-});
-
-document.getElementById('addTeamForm')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const formData = {
-        name: document.getElementById('teamName').value
-    };
-
-    try {
-        const response = await fetch('/api/teams', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(formData)
-        });
-
-        if (!response.ok) {
-            const data = await response.json();
-            throw new Error(data.error || 'Failed to add team');
-        }
-
-        showAlert('success', 'Team added successfully');
-        document.getElementById('addTeamForm').reset();
-        bootstrap.Modal.getInstance(document.getElementById('addTeamModal')).hide();
-        await Promise.all([loadTeams(), loadApplications()]);
-    } catch (error) {
-        showAlert('error', error.message);
-    }
-});
-
-// Delete handlers
-async function deleteApplication(appId) {
-    if (!confirm('Are you sure you want to delete this application?')) return;
-    
-    try {
-        const response = await fetch(`/api/applications/${appId}`, {
-            method: 'DELETE'
-        });
-
-        if (!response.ok) {
-            const data = await response.json();
-            throw new Error(data.error || 'Failed to delete application');
-        }
-
-        showAlert('success', 'Application deleted successfully');
-        await Promise.all([loadTeams(), loadApplications()]);
-    } catch (error) {
-        showAlert('error', error.message);
-    }
-}
-
-async function deleteTeam(teamId) {
-    if (!confirm('Are you sure you want to delete this team?')) return;
-    
-    try {
-        const response = await fetch(`/api/teams/${teamId}`, {
-            method: 'DELETE'
-        });
-
-        if (!response.ok) {
-            const data = await response.json();
-            throw new Error(data.error || 'Failed to delete team');
-        }
-
-        showAlert('success', 'Team deleted successfully');
-        await Promise.all([loadTeams(), loadApplications()]);
-    } catch (error) {
-        showAlert('error', error.message);
-    }
-}
-
-// Load data on page load and update team select
-document.addEventListener('DOMContentLoaded', async () => {
-    try {
-        const response = await fetch('/api/teams');
-        if (!response.ok) throw new Error('Failed to fetch teams');
-        const teams = await response.json();
-        
-        const teamSelect = document.getElementById('teamSelect');
-        if (teamSelect) {
-            teamSelect.innerHTML = teams.map(team => 
-                `<option value="${team.id}">${team.name}</option>`
-            ).join('');
-        }
-        
-        await Promise.all([loadTeams(), loadApplications()]);
-    } catch (error) {
-        console.error('Error loading initial data:', error);
-        showAlert('error', error.message);
-    }
-});
-
-// Stop auto-refresh of applications
-let lastLoadTime = 0;
-const REFRESH_INTERVAL = 30000; // 30 seconds
-
-async function loadApplications() {
-    const now = Date.now();
-    if (now - lastLoadTime < REFRESH_INTERVAL) return;
-    
-    try {
-        const response = await fetch('/api/applications');
-        if (!response.ok) throw new Error(`Failed to fetch applications: ${response.status}`);
-        const applications = await response.json();
-        
-        lastLoadTime = now;
-        
-        if (!applications || applications.length === 0) {
-            document.getElementById('applicationsList').innerHTML = `
-                <div class="col-12">
-                    <div class="alert alert-info">
-                        No applications found. Import some applications using the Import button above.
-                    </div>
-                </div>`;
-            return;
-        }
-
-        document.getElementById('applicationsList').innerHTML = applications.map(app => `
-            <div class="col">
-                <div class="card app-card h-100 section-card" onclick="toggleAppDetails(${app.id})">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <h5 class="card-title">${app.name}</h5>
-                                <div class="mb-2">
-                                    <span class="badge bg-info">${app.team_name || 'No Team'}</span>
-                                    ${getStatusBadgeHtml(app.instances[0]?.status || 'unknown')}
-                                </div>
-                            </div>
-                            <div class="btn-group">
-                                ${app.instances[0]?.webui_url ? `
-                                    <a href="${app.instances[0].webui_url}" target="_blank" class="btn btn-outline-primary btn-sm" onclick="event.stopPropagation()">
-                                        <i class="bi bi-box-arrow-up-right"></i>
-                                    </a>
-                                ` : ''}
-                                <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteApplication(${app.id})">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div class="app-details" id="details-${app.id}">
-                            <hr>
-                            <div class="small text-muted">
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <p><strong>Host:</strong> ${app.instances[0]?.host || '-'}</p>
-                                        <p><strong>Port:</strong> ${app.instances[0]?.port || '-'}</p>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <p><strong>DB Host:</strong> ${app.instances[0]?.db_host || '-'}</p>
-                                        <p><strong>Status:</strong> ${app.instances[0]?.status || 'unknown'}</p>
-                                    </div>
-                                </div>
-                                ${app.instances[0]?.webui_url ? `
-                                    <p><strong>Web UI:</strong> <a href="${app.instances[0].webui_url}" target="_blank">${app.instances[0].webui_url}</a></p>
-                                ` : ''}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `).join('');
-    } catch (error) {
-        console.error('Load error:', error);
-        showAlert('error', `Failed to load applications: ${error.message}`);
-    }
-}
+// Refresh applications every 30 seconds
+setInterval(loadApplications, 30000);
 </script>
-{% endblock %}
-
-{% block scripts %}
 {% endblock %}
