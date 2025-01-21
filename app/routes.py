@@ -41,6 +41,7 @@ def get_applications():
             'id': app.id,
             'name': app.name,
             'team_id': app.team_id,
+            'team_name': app.team.name if app.team else None,
             'instances': [{
                 'id': inst.id,
                 'host': inst.host,

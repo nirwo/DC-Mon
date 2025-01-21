@@ -917,89 +917,53 @@ setInterval(updateTeamsList, 10000);
 // Initial update
 document.addEventListener('DOMContentLoaded', updateTeamsList);
 
-function updateTeamsList() {
-    fetch('/api/teams')
-        .then(response => response.json())
-        .then(teams => {
-            const teamsList = document.getElementById('teamsList');
-            if (!teamsList) return;
-            
-            teamsList.innerHTML = '';
-            teams.forEach(team => {
-                const teamHtml = `
-                    <div class="col">
-                        <div class="card h-100">
-                            <div class="card-body">
+async function loadTeams() {
+    try {
+        const response = await fetch('/api/teams');
+        if (!response.ok) throw new Error(`Failed to fetch teams: ${response.status}`);
+        const teams = await response.json();
+        
+        document.getElementById('teamsList').innerHTML = teams.map(team => `
+            <div class="col">
+                <div class="card team-card h-100 section-card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
                                 <h5 class="card-title">${team.name}</h5>
-                                <p class="card-text text-muted">Team ID: ${team.id}</p>
+                                <span class="badge bg-info">${team.application_count} Applications</span>
                             </div>
-                            <div class="card-footer bg-transparent border-top-0">
-                                <button class="btn btn-danger btn-sm float-end" onclick="deleteTeam(${team.id})">
-                                    <i class="bi bi-trash"></i> Delete
+                            <div class="btn-group">
+                                <button class="btn btn-danger btn-sm" onclick="deleteTeam(${team.id})">
+                                    <i class="bi bi-trash"></i>
                                 </button>
                             </div>
                         </div>
                     </div>
-                `;
-                teamsList.insertAdjacentHTML('beforeend', teamHtml);
-            });
-        })
-        .catch(error => {
-            console.error('Error updating teams:', error);
-            showAlert('danger', 'Failed to update teams list');
-        });
-}
-
-async function loadTeams() {
-    try {
-        const response = await fetch('/api/teams');
-        const teams = await response.json();
-        
-        // Update teams list
-        const teamsList = document.getElementById('teamsList');
-        teamsList.innerHTML = teams.map(team => `
-            <div class="col">
-                <div class="card h-100">
-                    <div class="card-body">
-                        <h5 class="card-title">${team.name}</h5>
-                        <p class="card-text text-muted">Team ID: ${team.id}</p>
-                    </div>
-                    <div class="card-footer bg-transparent border-top-0">
-                        <button class="btn btn-danger btn-sm float-end" onclick="deleteTeam(${team.id})">
-                            <i class="bi bi-trash"></i> Delete
-                        </button>
-                    </div>
                 </div>
             </div>
         `).join('');
-        
-        // Update team select in add application form
-        const teamSelect = document.getElementById('teamSelect');
-        teamSelect.innerHTML = teams.map(team => 
-            `<option value="${team.id}">${team.name}</option>`
-        ).join('');
     } catch (error) {
+        console.error('Load error:', error);
         showAlert('error', `Failed to load teams: ${error.message}`);
     }
 }
 
 async function loadApplications() {
     try {
-        const [appsResponse, teamsResponse] = await Promise.all([
-            fetch('/api/applications').then(r => {
-                if (!r.ok) throw new Error(`Failed to fetch applications: ${r.status}`);
-                return r.json();
-            }),
-            fetch('/api/teams').then(r => {
-                if (!r.ok) throw new Error(`Failed to fetch teams: ${r.status}`);
-                return r.json();
-            })
-        ]);
+        const response = await fetch('/api/applications');
+        if (!response.ok) throw new Error(`Failed to fetch applications: ${response.status}`);
+        const applications = await response.json();
         
-        const applications = appsResponse;
-        const teams = teamsResponse;
-        const teamsMap = Object.fromEntries(teams.map(team => [team.id, team.name]));
-        
+        if (!applications || applications.length === 0) {
+            document.getElementById('applicationsList').innerHTML = `
+                <div class="col-12">
+                    <div class="alert alert-info">
+                        No applications found. Import some applications using the Import button above.
+                    </div>
+                </div>`;
+            return;
+        }
+
         document.getElementById('applicationsList').innerHTML = applications.map(app => `
             <div class="col">
                 <div class="card app-card h-100 section-card" onclick="toggleAppDetails(${app.id})">
@@ -1008,7 +972,7 @@ async function loadApplications() {
                             <div>
                                 <h5 class="card-title">${app.name}</h5>
                                 <div class="mb-2">
-                                    <span class="badge bg-info">${teamsMap[app.team_id]}</span>
+                                    <span class="badge bg-info">${app.team_name || 'No Team'}</span>
                                     ${getStatusBadgeHtml(app.instances[0]?.status || 'unknown')}
                                 </div>
                             </div>
@@ -1052,190 +1016,12 @@ async function loadApplications() {
     }
 }
 
-function toggleAppDetails(cardId) {
-    const details = document.getElementById(`details-${cardId}`);
-    details.classList.toggle('expanded');
-}
-
-// Add import form listener
-document.addEventListener('DOMContentLoaded', function() {
-    const importForm = document.getElementById('importForm');
-    if (importForm) {
-        importForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData();
-            const file = document.getElementById('csvFile').files[0];
-            if (!file) {
-                showAlert('error', 'Please select a file');
-                return;
-            }
-            formData.append('file', file);
-
-            try {
-                const response = await fetch('/import_apps', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const result = await response.json();
-                if (!response.ok) {
-                    throw new Error(result.error || 'Import failed');
-                }
-
-                if (result.imported > 0) {
-                    showAlert('success', result.message || `Successfully imported ${result.imported} applications.`);
-                    // Reset form and refresh data
-                    document.getElementById('importForm').reset();
-                    bootstrap.Modal.getInstance(document.getElementById('importModal')).hide();
-                    await loadData();
-                } else {
-                    showAlert('warning', result.message || 'No applications were imported.');
-                }
-
-                if (result.errors && result.errors.length > 0) {
-                    result.errors.forEach(error => {
-                        showAlert('warning', error);
-                    });
-                }
-            } catch (error) {
-                showAlert('error', `Import failed: ${error.message}`);
-            }
-        });
-    }
-});
-
-// CSV Mapping UI
-let csvHeaders = [];
-let previewData = [];
-
-document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const formData = new FormData();
-    formData.append('file', document.getElementById('csvFile').files[0]);
-
-    try {
-        const response = await fetch('/preview_csv', {
-            method: 'POST',
-            body: formData
-        });
-        const data = await response.json();
-        
-        if (data.error) {
-            throw new Error(data.error);
-        }
-
-        csvHeaders = data.headers;
-        previewData = data.preview;
-        showColumnMapping(data.headers, data.required_fields);
-        
-        document.getElementById('step1').classList.add('hidden');
-        document.getElementById('step2').classList.remove('hidden');
-    } catch (error) {
-        alert('Error: ' + error.message);
-    }
-});
-
-function showColumnMapping(headers, requiredFields) {
-    const mappingDiv = document.getElementById('columnMapping');
-    mappingDiv.innerHTML = '';
-
-    requiredFields.forEach(field => {
-        const row = document.createElement('div');
-        row.className = 'mapping-row';
-        
-        const select = document.createElement('select');
-        select.className = 'form-select';
-        select.id = `map_${field}`;
-        
-        // Add empty option
-        const emptyOption = document.createElement('option');
-        emptyOption.value = '';
-        emptyOption.textContent = `Select column for ${field}${requiredFields.includes(field) ? ' *' : ''}`;
-        select.appendChild(emptyOption);
-        
-        // Add CSV headers as options
-        headers.forEach(header => {
-            const option = document.createElement('option');
-            option.value = header;
-            option.textContent = header;
-            // Auto-select if header matches field name
-            if (header.toLowerCase() === field.toLowerCase()) {
-                option.selected = true;
-            }
-            select.appendChild(option);
-        });
-
-        row.appendChild(select);
-        mappingDiv.appendChild(row);
-    });
-}
-
-document.getElementById('importButton').addEventListener('click', async () => {
-    const formData = new FormData();
-    const file = document.getElementById('csvFile').files[0];
-    if (!file) {
-        showAlert('error', 'Please select a file');
-        return;
-    }
-    formData.append('file', file);
-
-    try {
-        const response = await fetch('/import_apps', {
-            method: 'POST',
-            body: formData
-        });
-        
-        const result = await response.json();
-        if (result.error) {
-            throw new Error(result.error);
-        }
-
-        showAlert('success', `Successfully imported ${result.imported} applications. ${result.skipped > 0 ? `Skipped ${result.skipped} entries.` : ''}`);
-        
-        // Reset form and refresh data
-        document.getElementById('importForm').reset();
-        $('#importModal').modal('hide');
-        loadData();
-    } catch (error) {
-        showAlert('error', `Import failed: ${error.message}`);
-    }
-});
-
-document.getElementById('backButton').addEventListener('click', () => {
-    document.getElementById('step2').classList.add('hidden');
-    document.getElementById('step1').classList.remove('hidden');
-});
-
-document.getElementById('importForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const formData = new FormData();
-    const file = document.getElementById('csvFile').files[0];
-    if (!file) {
-        showAlert('error', 'Please select a file');
-        return;
-    }
-    formData.append('file', file);
-
-    try {
-        const response = await fetch('/import_apps', {
-            method: 'POST',
-            body: formData
-        });
-        
-        const result = await response.json();
-        if (result.error) {
-            throw new Error(result.error);
-        }
-
-        showAlert('success', `Successfully imported ${result.imported} applications. ${result.skipped > 0 ? `Skipped ${result.skipped} entries.` : ''}`);
-        
-        // Reset form and refresh data
-        document.getElementById('importForm').reset();
-        $('#importModal').modal('hide');
-        loadData();
-    } catch (error) {
-        showAlert('error', `Import failed: ${error.message}`);
-    }
+// Load data on page load
+document.addEventListener('DOMContentLoaded', async () => {
+    await Promise.all([
+        loadTeams(),
+        loadApplications()
+    ]);
 });
 </script>
 {% endblock %}
