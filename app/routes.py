@@ -1,13 +1,5 @@
-from flask import Blueprint, jsonify, request, current_app, render_template
-from app.models import Team, Application, ApplicationInstance
-from app import db
-import tempfile
-import csv
-import os
-import io
-import traceback
-from io import StringIO
-import socket
+from flask import Blueprint, jsonify, request, render_template
+from .models import db, Team, Application, System
 
 main = Blueprint('main', __name__)
 
@@ -17,257 +9,143 @@ def index():
 
 @main.route('/api/teams', methods=['GET'])
 def get_teams():
-    try:
-        teams = Team.query.all()
-        return jsonify([team.to_dict() for team in teams])
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    teams = Team.query.all()
+    return jsonify([team.to_dict() for team in teams])
+
+@main.route('/api/teams', methods=['POST'])
+def create_team():
+    data = request.get_json()
+    team = Team(name=data['name'])
+    db.session.add(team)
+    db.session.commit()
+    return jsonify(team.to_dict())
 
 @main.route('/api/teams/<int:team_id>', methods=['DELETE'])
 def delete_team(team_id):
-    try:
-        team = Team.query.get_or_404(team_id)
-        for app in team.applications:
-            ApplicationInstance.query.filter_by(application_id=app.id).delete()
-        Application.query.filter_by(team_id=team_id).delete()
-        db.session.delete(team)
-        db.session.commit()
-        return jsonify({'message': 'Team deleted successfully'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+    team = Team.query.get_or_404(team_id)
+    db.session.delete(team)
+    db.session.commit()
+    return '', 204
 
 @main.route('/api/applications', methods=['GET'])
 def get_applications():
-    try:
-        applications = Application.query.all()
-        result = []
-        seen_apps = set()
-        
-        for app in applications:
-            # Skip if we've already processed this app
-            if app.name in seen_apps:
-                continue
-                
-            seen_apps.add(app.name)
-            app_dict = app.to_dict()
-            instances = []
-            
-            # Get all instances for apps with the same name
-            same_name_apps = Application.query.filter_by(name=app.name).all()
-            for same_app in same_name_apps:
-                for instance in same_app.instances:
-                    instance_dict = instance.to_dict()
-                    try:
-                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        sock.settimeout(2)
-                        port = instance.port or 80
-                        status = sock.connect_ex((instance.host, port))
-                        sock.close()
-                        
-                        instance_dict['status'] = 'running' if status == 0 else 'stopped'
-                    except:
-                        instance_dict['status'] = 'error'
-                    instances.append(instance_dict)
-            
-            if instances:  # Only add if there are instances
-                app_dict['instances'] = instances
-                result.append(app_dict)
-                
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    apps = Application.query.all()
+    return jsonify([app.to_dict() for app in apps])
 
 @main.route('/api/applications', methods=['POST'])
 def create_application():
-    try:
-        data = request.json
-        app = Application(
-            name=data['name'],
-            team_id=data['team_id']
-        )
-        db.session.add(app)
-        db.session.flush()
-
-        instance = ApplicationInstance(
-            application_id=app.id,
-            host=data['host'],
-            port=data.get('port'),
-            webui_url=data.get('webui_url'),
-            db_host=data.get('db_host'),
-            status='running'
-        )
-        db.session.add(instance)
-        db.session.commit()
-        
-        return jsonify({
-            'id': app.id,
-            'name': app.name,
-            'team_id': app.team_id,
-            'instances': [{
-                'id': instance.id,
-                'host': instance.host,
-                'port': instance.port,
-                'webui_url': instance.webui_url,
-                'db_host': instance.db_host,
-                'status': instance.status
-            }]
-        })
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+    data = request.get_json()
+    
+    # Create application
+    app = Application(
+        name=data['name'],
+        team_id=data['team_id'],
+        description=data.get('description', ''),
+        webui_url=data.get('webui_url', '')
+    )
+    db.session.add(app)
+    db.session.flush()
+    
+    # Create and link system
+    system = System(
+        name=f"{data['name']}-system",
+        host=data['host'],
+        port=data.get('port', 80),
+        status='running'
+    )
+    db.session.add(system)
+    db.session.flush()
+    
+    app.systems.append(system)
+    db.session.commit()
+    
+    return jsonify(app.to_dict())
 
 @main.route('/api/applications/<int:app_id>', methods=['DELETE'])
 def delete_application(app_id):
-    try:
-        app = Application.query.get_or_404(app_id)
-        ApplicationInstance.query.filter_by(application_id=app_id).delete()
-        db.session.delete(app)
-        db.session.commit()
-        return jsonify({'message': 'Application deleted successfully'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+    app = Application.query.get_or_404(app_id)
+    db.session.delete(app)
+    db.session.commit()
+    return '', 204
 
 @main.route('/api/applications/<int:app_id>', methods=['PUT'])
 def update_application(app_id):
-    try:
-        app = Application.query.get_or_404(app_id)
-        data = request.json
-        
-        app.name = data.get('name', app.name)
-        if 'team_id' in data:
-            app.team_id = data['team_id']
-            
-        if app.instances:
-            instance = app.instances[0]
-            instance.host = data.get('host', instance.host)
-            instance.port = data.get('port', instance.port)
-            instance.webui_url = data.get('webui_url', instance.webui_url)
-            instance.db_host = data.get('db_host', instance.db_host)
-        
-        db.session.commit()
-        return jsonify({'message': 'Application updated successfully'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+    app = Application.query.get_or_404(app_id)
+    data = request.get_json()
+    app.name = data.get('name', app.name)
+    if 'team_id' in data:
+        app.team_id = data['team_id']
+    if 'description' in data:
+        app.description = data['description']
+    if 'webui_url' in data:
+        app.webui_url = data['webui_url']
+    db.session.commit()
+    return jsonify({'message': 'Application updated successfully'})
 
 @main.route('/api/applications/<int:app_id>/systems', methods=['GET'])
 def get_application_systems(app_id):
-    try:
-        app = Application.query.get_or_404(app_id)
-        return jsonify([system.to_dict() for system in app.systems])
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@main.route('/check_status/<int:app_id>', methods=['GET'])
-def test_application(app_id):
-    try:
-        app = Application.query.get_or_404(app_id)
-        instances = ApplicationInstance.query.filter_by(application_id=app_id).all()
-        results = []
-        
-        for instance in instances:
-            instance.status = 'running'
-            db.session.add(instance)
-            results.append({
-                'id': instance.id,
-                'status': instance.status,
-                'host': instance.host,
-                'port': instance.port
-            })
-        
-        db.session.commit()
-        return jsonify({
-            'status': 'success',
-            'message': 'Status check completed',
-            'results': results
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@main.route('/update_application/<int:app_id>', methods=['POST'])
-def update_app_state(app_id):
-    try:
-        data = request.json
-        app = Application.query.get_or_404(app_id)
-        
-        # Update application fields
-        app.name = data.get('name', app.name)
-        app.team_id = data.get('team_id', app.team_id)
-        
-        # Update instances
-        if 'instances' in data:
-            for instance_data in data['instances']:
-                instance = ApplicationInstance.query.get(instance_data['id'])
-                if instance:
-                    instance.host = instance_data.get('host', instance.host)
-                    instance.port = instance_data.get('port', instance.port)
-                    instance.webui_url = instance_data.get('webui_url', instance.webui_url)
-                    instance.db_host = instance_data.get('db_host', instance.db_host)
-                    db.session.add(instance)
-        
-        db.session.add(app)
-        db.session.commit()
-        return jsonify({'status': 'success', 'message': 'Application updated successfully'})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    app = Application.query.get_or_404(app_id)
+    return jsonify([system.to_dict() for system in app.systems])
 
 @main.route('/api/systems', methods=['GET'])
 def get_systems():
-    try:
-        systems = System.query.all()
-        return jsonify([system.to_dict() for system in systems])
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    systems = System.query.all()
+    return jsonify([system.to_dict() for system in systems])
+
+@main.route('/api/systems', methods=['POST'])
+def create_system():
+    data = request.get_json()
+    system = System(
+        name=data['name'],
+        host=data['host'],
+        port=data.get('port', 80),
+        status=data.get('status', 'unknown')
+    )
+    db.session.add(system)
+    db.session.commit()
+    return jsonify(system.to_dict())
 
 @main.route('/api/systems/<int:system_id>', methods=['DELETE'])
 def delete_system(system_id):
-    try:
-        system = System.query.get_or_404(system_id)
-        db.session.delete(system)
-        db.session.commit()
-        return jsonify({'message': 'System deleted successfully'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    system = System.query.get_or_404(system_id)
+    db.session.delete(system)
+    db.session.commit()
+    return jsonify({'message': 'System deleted successfully'})
 
 @main.route('/preview_csv', methods=['POST'])
 def preview_csv():
-    try:
-        if 'file' not in request.files:
-            return jsonify({"error": "No file provided"}), 400
+    if 'file' not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+    
+    file = request.files['file']
+    if not file.filename.endswith('.csv'):
+        return jsonify({"error": "Invalid file format. Please upload a CSV file"}), 400
+    
+    # Create a temporary file to store the uploaded content
+    with tempfile.NamedTemporaryFile(mode='wb', delete=False) as temp_file:
+        file.save(temp_file.name)
         
-        file = request.files['file']
-        if not file.filename.endswith('.csv'):
-            return jsonify({"error": "Invalid file format. Please upload a CSV file"}), 400
+        # Read CSV headers and preview data
+        with open(temp_file.name, 'r') as csvfile:
+            reader = csv.DictReader(csvfile)
+            headers = reader.fieldnames
+            preview = []
+            for i, row in enumerate(reader):
+                if i >= 5:  # Only show first 5 rows
+                    break
+                preview.append(row)
         
-        # Create a temporary file to store the uploaded content
-        with tempfile.NamedTemporaryFile(mode='wb', delete=False) as temp_file:
-            file.save(temp_file.name)
-            
-            # Read CSV headers and preview data
-            with open(temp_file.name, 'r') as csvfile:
-                reader = csv.DictReader(csvfile)
-                headers = reader.fieldnames
-                preview = []
-                for i, row in enumerate(reader):
-                    if i >= 5:  # Only show first 5 rows
-                        break
-                    preview.append(row)
-            
-            os.unlink(temp_file.name)
-            
-            required_fields = ['name', 'team', 'host', 'port']
-            optional_fields = ['webui_url', 'db_host', 'description']
-            
-            return jsonify({
-                "headers": headers,
-                "preview": preview,
-                "required_fields": required_fields,
-                "optional_fields": optional_fields
-            })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        os.unlink(temp_file.name)
+        
+        required_fields = ['name', 'team', 'host', 'port']
+        optional_fields = ['webui_url', 'db_host', 'description']
+        
+        return jsonify({
+            "headers": headers,
+            "preview": preview,
+            "required_fields": required_fields,
+            "optional_fields": optional_fields
+        })
 
 @main.route('/import_apps', methods=['POST'])
 def import_apps():
