@@ -1,145 +1,127 @@
-# Shutdown Manager
+# Data Center Monitor (DC-Mon)
 
-A web application for managing and monitoring the shutdown sequence of multiple applications and their dependencies.
+A modern web application for monitoring and managing data center systems, built with FastAPI, Vue.js, and Tailwind CSS.
 
-## CSV Import Format
+## Features
 
-The system supports importing application data via CSV files. Here's the structure of the CSV file:
+- 📊 **Status Overview**: Real-time monitoring of all systems
+- 👥 **Owner Management**: Track system owners and their contact information
+- 🌓 **Dark Mode**: Comfortable viewing in any environment
+- 📱 **Responsive Design**: Works on desktop and mobile devices
 
-| Column | Description | Example |
-|--------|-------------|---------|
-| team_name | Name of the team responsible for the application | Frontend Team |
-| app_name | Name of the application | Customer Portal |
-| host | Hostname or IP address of the application | web1.internal |
-| port | Port number the application runs on | 8080 |
-| webui_url | URL of the application's web interface (if any) | http://web1.internal:8080 |
-| db_host | Database host:port (if any) | db1.internal:5432 |
-| shutdown_order | Order in which the application should be shut down (higher numbers first) | 100 |
-| dependencies | Semicolon-separated list of dependencies (host:port) | auth.internal:9000;user.internal:9001 |
+## Prerequisites
 
-### Sample Data
+- Python 3.8 or higher
+- Node.js 16.x or higher
+- npm or yarn
 
-A sample CSV file (`sample_data.csv`) is provided with example data. This includes:
+## Installation
 
-1. Frontend Applications:
-   - Customer Portal
-   - Admin Dashboard
+1. **Clone the repository**
+   ```bash
+   git clone <your-repo-url>
+   cd datacenter-shutdown-manager
+   ```
 
-2. API Services:
-   - Authentication Service
-   - User Service
-   - Order Service
+2. **Set up the Backend**
+   ```bash
+   # Create and activate virtual environment
+   python -m venv venv
+   source venv/bin/activate  # On Windows use: venv\Scripts\activate
+   
+   # Install Python dependencies
+   cd backend
+   pip install -r requirements.txt
+   ```
 
-3. Databases:
-   - User Database
-   - Order Database
+3. **Set up the Frontend**
+   ```bash
+   # Install Node.js dependencies
+   cd frontend
+   npm install
+   ```
 
-4. Monitoring Stack:
-   - Prometheus
-   - Grafana
-   - Time Series DB
+## Running the Application
 
-### Shutdown Order
+1. **Start the Backend Server**
+   ```bash
+   # From the backend directory
+   uvicorn main:app --reload --port 3000
+   ```
+   The API will be available at `http://localhost:3000`
 
-The shutdown_order field determines the sequence of shutdown:
-- Higher numbers are shut down first
-- Applications with the same shutdown_order are processed in parallel
-- Dependencies are automatically considered in the shutdown sequence
+2. **Start the Frontend Development Server**
+   ```bash
+   # From the frontend directory
+   npm run dev
+   ```
+   The web interface will be available at `http://localhost:3001`
 
-### Dependencies
+3. **Using the Start Script**
+   ```bash
+   # From the project root
+   chmod +x start.sh  # Make the script executable
+   ./start.sh        # Run both backend and frontend
+   ```
 
-Dependencies are specified as host:port pairs, separated by semicolons. For example:
+## API Documentation
+
+- API documentation is available at `http://localhost:3000/docs`
+- ReDoc alternative documentation at `http://localhost:3000/redoc`
+
+## Project Structure
+
 ```
-auth.internal:9000;user.internal:9001
-```
-This means the application depends on both the Authentication Service and User Service.
-
-## Docker Setup
-
-### Prerequisites
-
-- Docker
-- Docker Compose
-
-### Quick Start
-
-1. Clone the repository:
-```bash
-git clone https://github.com/your-username/shutdown-manager.git
-cd shutdown-manager
-```
-
-2. Start the application using Docker Compose:
-```bash
-docker-compose up --build
-```
-
-The application will be available at http://localhost:5001
-
-### Development Setup
-
-1. Install dependencies:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-2. Set environment variables (optional):
-```bash
-export FLASK_APP=run.py
-export FLASK_ENV=development
-export DATABASE_URL=postgresql://dcmon:dcmon@localhost:5432/dcmon
+datacenter-shutdown-manager/
+├── backend/
+│   ├── main.py           # FastAPI application
+│   ├── requirements.txt  # Python dependencies
+│   └── servers.db       # SQLite database
+├── frontend/
+│   ├── src/
+│   │   ├── styles.css   # Tailwind CSS styles
+│   │   └── components/  # Vue components
+│   ├── index.html       # Main HTML file
+│   ├── app.js          # Vue application
+│   └── package.json    # Node.js dependencies
+├── start.sh           # Startup script
+└── README.md         # This file
 ```
 
-3. Run database migrations:
-```bash
-flask db upgrade
-```
+## Usage
 
-4. Start the development server:
-```bash
-flask run
-```
+1. **Status Overview Page**
+   - View total number of systems
+   - Monitor online/offline status
+   - Check systems with issues
+   - Access quick contact information
 
-### Docker Configuration
+2. **Owners Page**
+   - List all system owners
+   - View contact details
+   - See systems managed by each owner
+   - Quick-access contact options
 
-The application uses two Docker containers:
-- `web`: Flask application
-- `db`: PostgreSQL database
+## Development
 
-### Environment Variables
+- The project uses the `modern-ui` branch for development
+- Tailwind CSS v3.4.1 for styling
+- Vue.js for frontend components
+- FastAPI for backend API
+- SQLite for data storage
 
-- `DATABASE_URL`: PostgreSQL connection string
-- `FLASK_ENV`: Application environment (development/production)
-- `SECRET_KEY`: Application secret key
+## Contributing
 
-### Persistent Storage
-
-PostgreSQL data is stored in a Docker volume `postgres_data` to persist between container restarts.
-
-## Testing
-
-Run tests using:
-```bash
-pytest
-```
-
-## Troubleshooting
-
-1. Database Connection Issues:
-   - Ensure PostgreSQL container is running: `docker-compose ps`
-   - Check logs: `docker-compose logs db`
-
-2. Application Errors:
-   - Check application logs: `docker-compose logs web`
-   - Restart containers: `docker-compose restart`
-
-3. Reset Database:
-   - Stop containers: `docker-compose down`
-   - Remove volume: `docker volume rm shutdown-manager_postgres_data`
-   - Rebuild: `docker-compose up --build`
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
 ## License
 
-MIT License
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Support
+
+For support, please open an issue in the GitHub repository or contact the maintainers.
